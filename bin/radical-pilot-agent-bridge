@@ -1,0 +1,45 @@
+#!/usr/bin/env python
+
+import sys
+import radical.utils as ru
+
+
+# ------------------------------------------------------------------------------
+#
+if __name__ == "__main__":
+
+    assert(len(sys.argv) > 1), 'missing argument (session id)'
+    assert(len(sys.argv) > 2), 'missing argument (pilot id)'
+
+    sid       = sys.argv[1]
+    pid       = sys.argv[2]
+
+    cfg_put   = {'uid'       : '%s.%s.queue.put' % (sid, pid),
+                 'name'      : '%s.%s.queue.put' % (sid, pid),
+                 'stall_hwm' : 1,
+                 'bulk_size' : 1}
+
+    cfg_get   = {'uid'       : '%s.%s.queue.get' % (sid, pid),
+                 'name'      : '%s.%s.queue.get' % (sid, pid),
+                 'stall_hwm' : 1,
+                 'bulk_size' : 1}
+
+    queue_put = ru.zmq.Queue(cfg_put)
+    queue_get = ru.zmq.Queue(cfg_get)
+
+    queue_put.start()
+    queue_get.start()
+
+    sys.stdout.write('ZMQ_PUT_IN  : %s\n' % queue_put.addr_in)
+    sys.stdout.write('ZMQ_PUT_OUT : %s\n' % queue_put.addr_out)
+    sys.stdout.write('ZMQ_GET_IN  : %s\n' % queue_get.addr_in)
+    sys.stdout.write('ZMQ_GET_OUT : %s\n' % queue_get.addr_out)
+    sys.stdout.flush()
+
+    queue_put.wait()
+    queue_get.wait()
+
+
+# ------------------------------------------------------------------------------
+
+

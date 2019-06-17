@@ -783,7 +783,6 @@ class Default(PMGRLaunchingComponent):
         # ----------------------------------------------------------------------
         # get parameters from resource cfg, set defaults where needed
         agent_launch_method     = rcfg.get('agent_launch_method')
-        agent_dburl             = rcfg.get('agent_mongodb_endpoint', database_url)
         agent_spawner           = rcfg.get('agent_spawner',       DEFAULT_AGENT_SPAWNER)
         rc_agent_config         = rcfg.get('agent_config',        DEFAULT_AGENT_CONFIG)
         agent_scheduler         = rcfg.get('agent_scheduler')
@@ -1069,7 +1068,7 @@ class Default(PMGRLaunchingComponent):
         agent_cfg['resource_cfg']       = copy.deepcopy(rcfg)
         agent_cfg['debug']              = self._log.getEffectiveLevel()
 
-        # we'll also push the agent config into MongoDB
+        # we'll also push the agent config
         pilot['cfg'] = agent_cfg
 
         # ----------------------------------------------------------------------

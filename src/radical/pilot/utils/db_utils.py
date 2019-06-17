@@ -3,7 +3,6 @@ import os
 import sys
 import time
 import datetime
-import pymongo
 
 import radical.utils as ru
 from   radical.pilot.states import *

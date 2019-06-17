@@ -5,7 +5,6 @@ import copy
 import time
 import errno
 import datetime
-import pymongo
 import netifaces
 import threading
 import multiprocessing
