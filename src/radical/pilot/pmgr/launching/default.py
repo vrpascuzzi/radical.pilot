@@ -69,7 +69,7 @@ class Default(PMGRLaunchingComponent):
         self._check_lock    = threading.RLock()  # lock on maipulating the above
         self._saga_fs_cache = dict()             # cache of saga directories
         self._saga_js_cache = dict()             # cache of saga job services
-        self._sandboxes     = dict()             # cache of resource sandbox URLs
+        self._sbox_cache    = dict()             # cache of sandbox URLs
         self._cache_lock    = threading.RLock()  # lock for cache
 
         self._mod_dir       = os.path.dirname(os.path.abspath(__file__))
@@ -1105,7 +1105,7 @@ class Default(PMGRLaunchingComponent):
         # NOTE: this will race when multiple pilot launcher instances are used!
         with self._cache_lock:
 
-            if resource not in self._sandboxes:
+            if resource not in self._sbox_cache:
 
                 for sdist in sdist_paths:
                     base = os.path.basename(sdist)
@@ -1135,7 +1135,7 @@ class Default(PMGRLaunchingComponent):
                                       'tgt' : '%s/%s' % (session_sandbox, cc_name),
                                       'rem' : False})
 
-                self._sandboxes[resource] = True
+                self._sbox_cache[resource] = True
 
 
         # ----------------------------------------------------------------------

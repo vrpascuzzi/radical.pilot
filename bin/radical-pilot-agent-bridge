@@ -17,12 +17,14 @@ if __name__ == "__main__":
     cfg_put   = {'uid'       : '%s.%s.queue.put' % (sid, pid),
                  'name'      : '%s.%s.queue.put' % (sid, pid),
                  'stall_hwm' : 1,
-                 'bulk_size' : 1}
+                 'bulk_size' : 1, 
+                 'timeout'   : 30}
 
     cfg_get   = {'uid'       : '%s.%s.queue.get' % (sid, pid),
                  'name'      : '%s.%s.queue.get' % (sid, pid),
                  'stall_hwm' : 1,
-                 'bulk_size' : 1}
+                 'bulk_size' : 1, 
+                 'timeout'   : 30}
 
     queue_put = ru.zmq.Queue(cfg_put)
     queue_get = ru.zmq.Queue(cfg_get)

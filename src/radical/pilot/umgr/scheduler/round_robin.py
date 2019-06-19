@@ -62,7 +62,7 @@ class RoundRobin(UMGRSchedulingComponent):
 
             for pid in pids:
 
-                if not pid in self._pids:
+                if pid not in self._pids:
                     raise ValueError('no such pilot %s' % pid)
 
                 self._pids.remove(pid)

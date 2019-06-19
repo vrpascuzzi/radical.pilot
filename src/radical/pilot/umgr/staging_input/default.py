@@ -94,20 +94,27 @@ class Default(UMGRStagingInputComponent):
         cmd = msg.get('cmd')
         arg = msg.get('arg')
 
-        if cmd not in ['add_pilots']:
+        if cmd == 'add_pilots':
+
+            pilots = arg.get('pilots', [])
+
+            if not isinstance(pilots, list):
+                pilots = [pilots]
+
+            with self._pilots_lock:
+                for pilot in pilots:
+                    pid = pilot['uid']
+                    self._log.debug('add pilot %s', pid)
+                    if pid not in self._pilots:
+                        self._pilots[pid] = pilot
+
+        elif cmd == 'update_pilots':
+            # listen to this to get pilot zmq bridge info, which we need to
+            # push out units.
+            pass
+
+        else:
             self._log.debug('skip cmd %s', cmd)
-
-        pilots = arg.get('pilots', [])
-
-        if not isinstance(pilots, list):
-            pilots = [pilots]
-
-        with self._pilots_lock:
-            for pilot in pilots:
-                pid = pilot['uid']
-                self._log.debug('add pilot %s', pid)
-                if pid not in self._pilots:
-                    self._pilots[pid] = pilot
 
         return True
 

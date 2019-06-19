@@ -4,8 +4,7 @@ __license__   = "MIT"
 
 
 import os
-import copy
-import threading
+import threading as mt
 
 import radical.utils as ru
 
@@ -27,7 +26,6 @@ ROLE    = '_scheduler_role'
 ADDED   = 'added'
 REMOVED = 'removed'
 FAILED  = 'failed'
-
 
 
 # ==============================================================================
@@ -52,11 +50,11 @@ class UMGRSchedulingComponent(rpu.Component):
     #
     def initialize_child(self):
 
-        self._early       = dict()            # early-bound units, sorted by pid
-        self._pilots      = dict()            # dict of pilots to schedule over
-        self._pilots_lock = threading.RLock() # lock on the above dict
-        self._units       = dict()            # dict of scheduled unit IDs
-        self._units_lock  = threading.RLock() # lock on the above dict
+        self._early       = dict()      # early-bound units, sorted by pid
+        self._pilots      = dict()      # dict of pilots to schedule over
+        self._pilots_lock = mt.RLock()  # lock on the above dict
+        self._units       = dict()      # dict of scheduled unit IDs
+        self._units_lock  = mt.RLock()  # lock on the above dict
 
         # configure the scheduler instance
         self._configure()
@@ -166,9 +164,7 @@ class UMGRSchedulingComponent(rpu.Component):
     #
     def _update_pilot_states(self, pilots):
 
-        self._log.debug('update pilot states for %s', [p['uid'] for p in pilots])
-
-      # self._log.debug('update pilot states for %s', [p['uid'] for p in pilots])
+        self._log.debug('update pilot states: %s', [p['uid'] for p in pilots])
 
         if not pilots:
             return
@@ -185,7 +181,7 @@ class UMGRSchedulingComponent(rpu.Component):
                     self._pilots[pid] = {'role'  : None,
                                          'state' : None,
                                          'pilot' : None, 
-                                         'info'  : dict()  # scheduler private info
+                                         'info'  : dict()  # scheduler info
                                          }
 
                 target  = pilot['state']
@@ -198,12 +194,11 @@ class UMGRSchedulingComponent(rpu.Component):
                   # self._log.debug('%s: %s -> %s', pid,  current, target)
                     to_update.append(pid)
                     self._pilots[pid]['state'] = target
-                    self._log.debug('update pilot state: %s -> %s', current, passed)
+                    self._log.debug('update pilot state: %s -> %s',
+                                                         current, passed)
 
-      # self._log.debug('to update: %s', to_update)
         if to_update:
             self.update_pilots(to_update)
-      # self._log.debug('updated  : %s', to_update)
 
 
     # --------------------------------------------------------------------------
@@ -239,8 +234,11 @@ class UMGRSchedulingComponent(rpu.Component):
 
         if cmd == 'add_pilots':
 
+            # a pilot got added to the umgr, so it can be used for scheduling
+            # now
+
             pilots = arg['pilots']
-        
+
             with self._pilots_lock:
 
                 for pilot in pilots:
@@ -273,9 +271,11 @@ class UMGRSchedulingComponent(rpu.Component):
                     if early_units:
                         for unit in early_units:
                             if not unit.get('sandbox'):
-                                unit['sandbox'] = self._session._get_unit_sandbox(unit, pilot)
+                                unit['sandbox'] = \
+                                    self._session._get_unit_sandbox(unit, pilot)
 
-                        self.advance(early_units, rps.UMGR_STAGING_INPUT_PENDING, 
+                        self.advance(early_units,
+                                     rps.UMGR_STAGING_INPUT_PENDING, 
                                      publish=True, push=True)
 
             # let the scheduler know
@@ -283,6 +283,8 @@ class UMGRSchedulingComponent(rpu.Component):
 
 
         elif cmd == 'remove_pilots':
+            # the umgr got informed that a pilot is not to be used for unit
+            # execution anymore
 
             pids = arg['pids']
 

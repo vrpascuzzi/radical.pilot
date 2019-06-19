@@ -3,16 +3,11 @@ __copyright__ = "Copyright 2013-2016, http://radical.rutgers.edu"
 __license__   = "MIT"
 
 import os
-import pprint
 import threading
 
-import radical.utils as ru
-
-from ... import utils     as rpu
 from ... import states    as rps
-from ... import constants as rpc
 
-from .base import UMGRSchedulingComponent, ROLE, ADDED
+from .base import UMGRSchedulingComponent, ADDED
 
 
 # the high water mark determines the percentage of unit oversubscription for the
@@ -26,6 +21,7 @@ _BF_STOP  = os.environ.get('RADICAL_PILOT_BACKFILLING_STOP',  rps.PMGR_ACTIVE)
 
 _BF_START_VAL = rps._pilot_state_value(_BF_START)
 _BF_STOP_VAL  = rps._pilot_state_value(_BF_STOP)
+
 
 # ==============================================================================
 #
@@ -64,15 +60,12 @@ class Backfilling(UMGRSchedulingComponent):
             for pid in pids:
                 pilot = self._pilots[pid]['pilot']
                 cores = pilot['description']['cores']
-                hwm   = int(cores * _HWM/100)
-                self._pilots[pid]['info'] = {
-                        'cores' : cores,
-                        'hwm'   : hwm,
-                        'used'  : 0, 
-                        'units' : list(), # list of assigned unit IDs
-                        'done'  : list(), # list of executed unit IDs
-                        }
-
+                hwm   = int(cores * _HWM / 100)
+                self._pilots[pid]['info'] = {'cores' : cores,
+                                             'hwm'   : hwm,
+                                             'used'  : 0, 
+                                             'units' : list(),
+                                             'done'  : list()}
             # now we can use the pilot
             self._pids += pids
             self._schedule_units()
@@ -88,7 +81,7 @@ class Backfilling(UMGRSchedulingComponent):
 
             for pid in pids:
 
-                if not pid in self._pids:
+                if pid not in self._pids:
                     raise ValueError('no such pilot %s' % pid)
 
                 self._pids.remove(pid)
@@ -159,7 +152,7 @@ class Backfilling(UMGRSchedulingComponent):
                     self._log.debug('upd unit  %s no pilot', uid)
                     continue
 
-                if not pid in self._pilots:
+                if pid not in self._pilots:
                     # we don't handle the pilot of this unit
                     self._log.debug('upd unit  %s not handled', uid)
                     continue
@@ -176,7 +169,7 @@ class Backfilling(UMGRSchedulingComponent):
                     self._log.debug('upd unit  %s too early', uid)
                     continue
 
-                if not uid in info['units']:
+                if uid not in info['units']:
                     # this contradicts the unit's assignment
                     self._log.debug('upd unit  %s not in units', uid)
                     self._log.error('bf: unit %s on %s inconsistent', uid, pid)
@@ -187,7 +180,8 @@ class Backfilling(UMGRSchedulingComponent):
                 info['used'] -= unit['description']['cpu_processes'] \
                               * unit['description']['cpu_threads']
                 reschedule = True
-                self._log.debug('upd unit  %s -  schedule (used: %s)', uid, info['used'])
+                self._log.debug('upd unit  %s -  schedule (used: %s)',
+                                uid, info['used'])
 
                 if info['used'] < 0:
                     self._log.error('bf: pilot %s inconsistent', pid)
@@ -209,10 +203,10 @@ class Backfilling(UMGRSchedulingComponent):
             for unit in units:
 
                 uid = unit['uid']
-                    
+
                 # not yet scheduled - put in wait pool
                 self._wait_pool[uid] = unit
-                        
+
         self._schedule_units()
 
 
@@ -221,7 +215,7 @@ class Backfilling(UMGRSchedulingComponent):
     def _schedule_units(self):
         """
         We have a set of units which we can place over a set of pilots.  
-        
+
         The overall objective is to keep pilots busy while load balancing across
         all pilots, even those which might yet to get added.  We achieve that
         via the following algorithm:
@@ -244,9 +238,6 @@ class Backfilling(UMGRSchedulingComponent):
         """
 
         with self._pilots_lock, self._wait_lock:
-
-            # units to advance beyond scheduling
-            to_advance = list()
 
             # check if we have pilots to schedule over
             if not self._pids:
@@ -352,7 +343,7 @@ class Backfilling(UMGRSchedulingComponent):
       #     print 'pilot %s' % pid
       #     pprint.pprint(self._pilots[pid]['info'])
       # self._log.debug()
-        
+
 
 # ------------------------------------------------------------------------------
 
