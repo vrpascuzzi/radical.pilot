@@ -41,8 +41,9 @@ JOB_CHECK_INTERVAL    =  60  # seconds between runs of the job state check loop
 JOB_CHECK_MAX_MISSES  =   3  # number of times to find a job missing before
                              # declaring it dead
 
-LOCAL_SCHEME   = 'file'
-BOOTSTRAPPER_0 = "bootstrap_0.sh"
+LOCAL_SCHEME     = 'file'
+BOOTSTRAPPER_0_A = "bootstrap_0.sh"
+BOOTSTRAPPER_0_B = "bootstrap_zmq.sh"
 
 
 # ==============================================================================
@@ -73,10 +74,10 @@ class Default(PMGRLaunchingComponent):
         self._cache_lock    = threading.RLock()  # lock for cache
 
         self._mod_dir       = os.path.dirname(os.path.abspath(__file__))
-        self._root_dir      = "%s/../../"   % self._mod_dir  
-        self._conf_dir      = "%s/configs/" % self._root_dir 
+        self._root_dir      = "%s/../../"   % self._mod_dir
+        self._conf_dir      = "%s/configs/" % self._root_dir
 
-        self.register_input(rps.PMGR_LAUNCHING_PENDING, 
+        self.register_input(rps.PMGR_LAUNCHING_PENDING,
                             rpc.PMGR_LAUNCHING_QUEUE, self.work)
 
         # FIXME: make interval configurable
@@ -227,7 +228,7 @@ class Default(PMGRLaunchingComponent):
 
             self._prof.prof('staging_in_stop', uid=pid, msg=did)
 
-        self.publish(rpc.CONTROL_PUBSUB, {'cmd' : 'pilot_staging_input_result', 
+        self.publish(rpc.CONTROL_PUBSUB, {'cmd' : 'pilot_staging_input_result',
                                           'arg' : {'pilot' : pilot,
                                                    'sds'   : sds}})
 
@@ -336,7 +337,7 @@ class Default(PMGRLaunchingComponent):
         the request to get enacted, nor for it to arrive, but just send it.
         '''
 
-        if not pids or not self._pilots: 
+        if not pids or not self._pilots:
             # nothing to do
             return
 
@@ -368,16 +369,16 @@ class Default(PMGRLaunchingComponent):
 
         self._log.debug('killing pilots: %s', pids)
 
-        if not pids or not self._pilots: 
+        if not pids or not self._pilots:
             # nothing to do
             return
 
         # find the most recent cancellation request
         with self._pilots_lock:
-            self._log.debug('killing pilots: %s', 
-                              [p['pilot'].get('cancel_requested', 0) 
+            self._log.debug('killing pilots: %s',
+                              [p['pilot'].get('cancel_requested', 0)
                                for p in self._pilots.values()])
-            last_cancel = max([p['pilot'].get('cancel_requested', 0) 
+            last_cancel = max([p['pilot'].get('cancel_requested', 0)
                                for p in self._pilots.values()])
 
         self._log.debug('killing pilots: last cancel: %s', last_cancel)
@@ -503,13 +504,13 @@ class Default(PMGRLaunchingComponent):
 
         We expect `_prepare_pilot(resource, pilot)` to return a dict with:
 
-            { 
+            {
               'js' : saga.job.Description,
-              'ft' : [ 
+              'ft' : [
                 { 'src' : string  # absolute source file name
                   'tgt' : string  # relative target file name
                   'rem' : bool    # shall we remove src?
-                }, 
+                },
                 ... ]
             }
 
@@ -569,12 +570,16 @@ class Default(PMGRLaunchingComponent):
         # implies that we have to recheck that all URLs in fact do point into
         # the session sandbox.
 
-        ft_list = list()  # files to stage
-        jd_list = list()  # jobs  to submit
+        ft_list  = list()  # files to stage
+        jda_list = list()  # pilot jobs  to submit
+        jdb_list = list()  # bridge jobs  to submit
         for pilot in pilots:
-            info = self._prepare_pilot(resource, rcfg, pilot)
-            ft_list += info['ft']
-            jd_list.append(info['jd'])
+            info_b   = self._prepare_bridge(resource, rcfg, pilot)
+            info_a   = self._prepare_pilot(resource, rcfg, pilot)
+            ft_list += info_b['ft']
+            ft_list += info_a['ft']
+            jda_list.append((info_a['jd']))
+            jdb_list.append((info_b['jd']))
             self._prof.prof('staging_in_start', uid=pilot['uid'])
 
         for ft in ft_list:
@@ -590,7 +595,7 @@ class Default(PMGRLaunchingComponent):
                 os.makedirs('%s/%s' % (tmp_dir, tgt_dir))
 
             if src == '/dev/null' :
-                # we want an empty file -- touch it (tar will refuse to 
+                # we want an empty file -- touch it (tar will refuse to
                 # handle a symlink to /dev/null)
                 open('%s/%s' % (tmp_dir, tgt), 'a').close()
             else:
@@ -655,7 +660,7 @@ class Default(PMGRLaunchingComponent):
                 js_tmp  = rs.job.Service(js_url, session=self._session)
                 self._saga_js_cache[js_url] = js_tmp
 
-     ## cmd = "tar zmxvf %s/%s -C / ; rm -f %s" % \
+        # FIXME: remove source tree after tar
         cmd = "tar zmxvf %s/%s -C %s" % \
                 (session_sandbox, tar_name, session_sandbox)
         j = js_tmp.run_job(cmd)
@@ -678,15 +683,24 @@ class Default(PMGRLaunchingComponent):
                 js = rs.job.Service(js_ep, session=self._session)
                 self._saga_js_cache[js_ep] = js
 
-        # now that the scripts are in place and configured, 
-        # we can launch the agent
-        jc = rs.job.Container()
+        # start bridges for all pilots
+        jcb = rs.job.Container()
 
-        for jd in jd_list:
+        for _,jd in jd_list:
             self._log.debug('jd: %s', pprint.pformat(jd.as_dict()))
-            jc.add(js.create_job(jd))
+            jcb.add(js.create_job(jd))
 
-        jc.run()
+        jcb.run()
+
+        # now that the scripts are in place and configured,
+        # we can launch the pilot agents
+        jcp = rs.job.Container()
+
+        for jd,_ in jd_list:
+            self._log.debug('jd: %s', pprint.pformat(jd.as_dict()))
+            jcp.add(js.create_job(jd))
+
+        jcp.run()
 
         # we assume here that the tasks arrive in the same order as the job
         # descriptions.  For uniform sets of pilots the order does not matter
@@ -730,6 +744,127 @@ class Default(PMGRLaunchingComponent):
 
     # --------------------------------------------------------------------------
     #
+    def _prepare_pridge(self, resource, rcfg, pilot):
+
+        pid = pilot["uid"]
+        sid = self._session.uid
+
+        ret = {'fd': list,
+               'js': None}
+
+        # some default values are determined at runtime
+        default_virtenv = '%%(resource_sandbox)s/ve.%s.%s' % \
+                          (resource, self._rp_version)
+
+        python_interpreter = rcfg.get('python_interpreter')
+        virtenv_mode       = rcfg.get('virtenv_mode',      DEFAULT_VIRTENV_MODE)
+        virtenv            = rcfg.get('virtenv',           default_virtenv)
+        python_dist        = rcfg.get('python_dist')
+        virtenv_dist       = rcfg.get('virtenv_dist',      DEFAULT_VIRTENV_DIST)
+        shared_filesystem  = rcfg.get('shared_filesystem', list())
+        pre_bootstrap_0    = rcfg.get('pre_bootstrap_0',   list())
+
+        # get pilot and global sandbox
+        resource_sandbox = self._session._get_resource_sandbox (pilot).path
+        session_sandbox  = self._session._get_session_sandbox(pilot).path
+        pilot_sandbox    = self._session._get_pilot_sandbox  (pilot).path
+
+        # expand variables in virtenv string
+        virtenv = virtenv % {'pilot_sandbox'   : pilot_sandbox,
+                             'session_sandbox' : session_sandbox,
+                             'resource_sandbox': resource_sandbox}
+
+        # ----------------------------------------------------------------------
+        # sanity checks
+        if not python_dist : raise RuntimeError("missing python distribution")
+        if not virtenv_dist: raise RuntimeError("missing virtenv distribution")
+
+        # set mandatory args
+        bootstrap_args  = ""
+        bootstrap_args += " -p '%s'" % pid
+        bootstrap_args += " -s '%s'" % sid
+        bootstrap_args += " -m '%s'" % virtenv_mode
+        bootstrap_args += " -b '%s'" % python_dist
+        bootstrap_args += " -g '%s'" % virtenv_dist
+        bootstrap_args += " -v '%s'" % virtenv
+
+        if python_interpreter:      bootstrap_args += " -i '%s'" % python_interpreter
+
+        for arg in pre_bootstrap_0:
+            bootstrap_args += " -e '%s'" % arg
+
+        bridge_cfg = dict()
+        bridge_cfg['session_id']         = sid
+        bridge_cfg['pilot_id']           = pid
+        bridge_cfg['logdir']             = '.'
+        bridge_cfg['pilot_sandbox']      = pilot_sandbox
+        bridge_cfg['session_sandbox']    = session_sandbox
+        bridge_cfg['resource_sandbox']   = resource_sandbox
+        bridge_cfg['debug']              = self._log.getEffectiveLevel()
+
+        pilot['bcfg'] = bridge_cfg
+
+        # ----------------------------------------------------------------------
+        # Write agent config dict to a json file in pilot sandbox.
+        bridge_cfg_name = 'bridge_0.cfg'
+        cfg_tmp_handle, cfg_tmp_file = tempfile.mkstemp(prefix='rp.bridge_cfg.')
+        os.close(cfg_tmp_handle)  # file exists now
+
+        # Convert dict to json file
+        self._log.debug("Write agent cfg to '%s'.", cfg_tmp_file)
+        self._log.debug(pprint.pformat(bridge_cfg))
+        ru.write_json(bridge_cfg, cfg_tmp_file)
+
+        ret['ft'].append({'src' : cfg_tmp_file,
+                          'tgt' : '%s/%s' % (pilot_sandbox, bridge_cfg_name),
+                          'rem' : True})  # purge the tmp file after packing
+
+        # check if we have a sandbox cached for that resource.  If so, we have
+        # nothing to do.  Otherwise we create the sandbox and stage the RP
+        # stack etc.
+        # NOTE: this will race when multiple pilot launcher instances are used!
+        with self._cache_lock:
+
+            if resource not in self._sbox_cache:
+
+                # Copy the bootstrap shell script.
+                bootstrapper_path = os.path.abspath("%s/agent/%s"
+                                  % (self._root_dir, BOOTSTRAPPER_0_B))
+                self._log.debug("use bootstrapper %s", bootstrapper_path)
+
+                ret['ft'].append({'src' : bootstrapper_path,
+                                  'tgt' : '%s/%s' % (session_sandbox,
+                                                     BOOTSTRAPPER_0_B),
+                                  'rem' : False})
+
+                self._sbox_cache[resource] = True
+
+
+        # ----------------------------------------------------------------------
+        # Create SAGA Job description and submit the bridge bootstrapper.
+        # This will always land on the head node
+
+        jd = rs.job.Description()
+
+        if shared_filesystem:
+            bootstrap_tgt = '%s/%s' % (session_sandbox, BOOTSTRAPPER_0_B)
+        else:
+            bootstrap_tgt = '%s/%s' % ('.', BOOTSTRAPPER_0_B)
+
+        jd.name                  = '%s.bridge' % pid
+        jd.executable            = "/bin/bash"
+        jd.arguments             = ['-l %s' % bootstrap_tgt, bootstrap_args]
+        jd.working_directory     = pilot_sandbox
+        jd.output                = "bootstrap_0b.out"
+        jd.error                 = "bootstrap_0b.err"
+        jd.environment           = dict()
+
+        ret['jd'] = jd
+        return ret
+
+
+    # --------------------------------------------------------------------------
+    #
     def _prepare_pilot(self, resource, rcfg, pilot):
 
         pid = pilot["uid"]
@@ -764,7 +899,7 @@ class Default(PMGRLaunchingComponent):
         # ----------------------------------------------------------------------
         # Database connection parameters
         sid           = self._session.uid
-        database_url  = self._session.dburl
+     ## database_url  = self._session.dburl
 
         # some default values are determined at runtime
         default_virtenv = '%%(resource_sandbox)s/ve.%s.%s' % \
@@ -886,11 +1021,11 @@ class Default(PMGRLaunchingComponent):
             raise RuntimeError("'global_virtenv' is deprecated (%s)" % resource)
 
         # Create a host:port string for use by the bootstrap_0.
-        db_url = rs.Url(agent_dburl)
-        if db_url.port:
-            db_hostport = "%s:%d" % (db_url.host, db_url.port)
-        else:
-            db_hostport = "%s:%d" % (db_url.host, 27017)  # mongodb default
+     ## db_url = rs.Url(agent_dburl)
+     ## if db_url.port:
+     ##     db_hostport = "%s:%d" % (db_url.host, db_url.port)
+     ## else:
+     ##     db_hostport = "%s:%d" % (db_url.host, 27017)  # mongodb default
 
         # ----------------------------------------------------------------------
         # the version of the agent is derived from
@@ -930,7 +1065,7 @@ class Default(PMGRLaunchingComponent):
         #   create  : use    if ve exists, otherwise create, then use
         #   use     : use    if ve exists, otherwise error,  then exit
         #   recreate: delete if ve exists, otherwise create, then use
-        #      
+        #
         # examples   :
         #   virtenv@v0.20
         #   virtenv@devel
@@ -987,7 +1122,7 @@ class Default(PMGRLaunchingComponent):
                 # we cannot clean the sandbox from within the agent, as the hop
                 # staging would then fail, and we'd get nothing back.
                 # FIXME: cleanup needs to be done by the pmgr.launcher, or
-                #        someone else, really, after fetching all logs and 
+                #        someone else, really, after fetching all logs and
                 #        profiles.
                 cleanup = 'luv'
 
@@ -1031,8 +1166,8 @@ class Default(PMGRLaunchingComponent):
 
         # set optional args
         if lrms == "CCM":           bootstrap_args += " -c"
-        if forward_tunnel_endpoint: bootstrap_args += " -f '%s'" % forward_tunnel_endpoint
-        if forward_tunnel_endpoint: bootstrap_args += " -h '%s'" % db_hostport
+     ## if forward_tunnel_endpoint: bootstrap_args += " -f '%s'" % forward_tunnel_endpoint
+     ## if forward_tunnel_endpoint: bootstrap_args += " -h '%s'" % db_hostport
         if python_interpreter:      bootstrap_args += " -i '%s'" % python_interpreter
         if tunnel_bind_device:      bootstrap_args += " -t '%s'" % tunnel_bind_device
         if cleanup:                 bootstrap_args += " -x '%s'" % cleanup
@@ -1050,7 +1185,7 @@ class Default(PMGRLaunchingComponent):
         agent_cfg['scheduler']          = agent_scheduler
         agent_cfg['runtime']            = runtime
         agent_cfg['app_comm']           = app_comm
-        agent_cfg['dburl']              = str(database_url)
+     ## agent_cfg['dburl']              = str(database_url)
         agent_cfg['session_id']         = sid
         agent_cfg['pilot_id']           = pid
         agent_cfg['logdir']             = '.'
@@ -1086,7 +1221,7 @@ class Default(PMGRLaunchingComponent):
         self._log.debug(pprint.pformat(agent_cfg))
         ru.write_json(agent_cfg, cfg_tmp_file)
 
-        ret['ft'].append({'src' : cfg_tmp_file, 
+        ret['ft'].append({'src' : cfg_tmp_file,
                           'tgt' : '%s/%s' % (pilot_sandbox, agent_cfg_name),
                           'rem' : True})  # purge the tmp file after packing
 
@@ -1112,17 +1247,17 @@ class Default(PMGRLaunchingComponent):
 
                 for sdist in sdist_paths:
                     base = os.path.basename(sdist)
-                    ret['ft'].append({'src' : sdist, 
+                    ret['ft'].append({'src' : sdist,
                                       'tgt' : '%s/%s' % (session_sandbox, base),
                                       'rem' : False})
 
                 # Copy the bootstrap shell script.
                 bootstrapper_path = os.path.abspath("%s/agent/%s"
-                                  % (self._root_dir, BOOTSTRAPPER_0))
+                                  % (self._root_dir, BOOTSTRAPPER_0_A))
                 self._log.debug("use bootstrapper %s", bootstrapper_path)
 
-                ret['ft'].append({'src' : bootstrapper_path, 
-                                  'tgt' : '%s/%s' % (session_sandbox, BOOTSTRAPPER_0),
+                ret['ft'].append({'src' : bootstrapper_path,
+                                  'tgt' : '%s/%s' % (session_sandbox, BOOTSTRAPPER_0_A),
                                   'rem' : False})
 
                 # Some machines cannot run pip due to outdated CA certs.
@@ -1134,7 +1269,7 @@ class Default(PMGRLaunchingComponent):
                     cc_path = os.path.abspath("%s/agent/%s" % (self._root_dir, cc_name))
                     self._log.debug("use CAs %s", cc_path)
 
-                    ret['ft'].append({'src' : cc_path, 
+                    ret['ft'].append({'src' : cc_path,
                                       'tgt' : '%s/%s' % (session_sandbox, cc_name),
                                       'rem' : False})
 
@@ -1147,9 +1282,9 @@ class Default(PMGRLaunchingComponent):
         jd = rs.job.Description()
 
         if shared_filesystem:
-            bootstrap_tgt = '%s/%s' % (session_sandbox, BOOTSTRAPPER_0)
+            bootstrap_tgt = '%s/%s' % (session_sandbox, BOOTSTRAPPER_0_A)
         else:
-            bootstrap_tgt = '%s/%s' % ('.', BOOTSTRAPPER_0)
+            bootstrap_tgt = '%s/%s' % ('.', BOOTSTRAPPER_0_A)
 
         jd.name                  = pid
         jd.executable            = "/bin/bash"
@@ -1184,7 +1319,7 @@ class Default(PMGRLaunchingComponent):
         if not shared_filesystem:
 
             jd.file_transfer.extend([
-                'site:%s/%s > %s' % (session_sandbox, BOOTSTRAPPER_0, BOOTSTRAPPER_0),
+                'site:%s/%s > %s' % (session_sandbox, BOOTSTRAPPER_0_A, BOOTSTRAPPER_0_A),
                 'site:%s/%s > %s' % (pilot_sandbox,   agent_cfg_name, agent_cfg_name),
                 'site:%s/%s.log.tgz > %s.log.tgz' % (pilot_sandbox, pid, pid),
                 'site:%s/%s.log.tgz < %s.log.tgz' % (pilot_sandbox, pid, pid)

@@ -66,7 +66,7 @@ class Agent_0(rpu.Worker):
         # sanity check on config settings
         if 'cores'               not in cfg: raise ValueError('Missing number of cores')
         if 'lrms'                not in cfg: raise ValueError('Missing LRMS')
-        if 'dburl'               not in cfg: raise ValueError('Missing DBURL')
+     ## if 'dburl'               not in cfg: raise ValueError('Missing DBURL')
         if 'pilot_id'            not in cfg: raise ValueError('Missing pilot id')
         if 'runtime'             not in cfg: raise ValueError('Missing or zero agent runtime')
         if 'scheduler'           not in cfg: raise ValueError('Missing agent scheduler')
@@ -74,14 +74,14 @@ class Agent_0(rpu.Worker):
         if 'spawner'             not in cfg: raise ValueError('Missing agent spawner')
         if 'task_launch_method'  not in cfg: raise ValueError('Missing unit launch method')
 
-        # Check for the RADICAL_PILOT_DB_HOSTPORT env var, which will hold
-        # the address of the tunnelized DB endpoint. If it exists, we
-        # overrule the agent config with it.
-        hostport = os.environ.get('RADICAL_PILOT_DB_HOSTPORT')
-        if hostport:
-            dburl = ru.Url(cfg['dburl'])
-            dburl.host, dburl.port = hostport.split(':')
-            cfg['dburl'] = str(dburl)
+     ## # Check for the RADICAL_PILOT_DB_HOSTPORT env var, which will hold
+     ## # the address of the tunnelized DB endpoint. If it exists, we
+     ## # overrule the agent config with it.
+     ## hostport = os.environ.get('RADICAL_PILOT_DB_HOSTPORT')
+     ## if hostport:
+     ##     dburl = ru.Url(cfg['dburl'])
+     ##     dburl.host, dburl.port = hostport.split(':')
+     ##     cfg['dburl'] = str(dburl)
 
         # if the pilot description contains a request for application comm
         # channels, merge those into the agent config
@@ -103,10 +103,10 @@ class Agent_0(rpu.Worker):
         # communication channels and components/workers specified in the
         # config -- we merge that information into our own config.
         # We don't want the session to start components though, so remove them
-        # from the config copy.        
+        # from the config copy.
         session_cfg = copy.deepcopy(cfg)
         session_cfg['components'] = dict()
-        session = rp_Session(cfg=session_cfg, uid=self._sid)
+        session = rp_Session(cfg=session_cfg, uid=self._sid, _connect=False)
 
         # we still want the bridge addresses known though, so make sure they are
         # merged into our own copy, along with any other additions done by the
@@ -114,8 +114,8 @@ class Agent_0(rpu.Worker):
         ru.dict_merge(cfg, session._cfg, ru.PRESERVE)
         pprint.pprint(cfg)
 
-        if not session.is_connected:
-            raise RuntimeError('agent_0 could not connect to mongodb')
+     ## if not session.is_connected:
+     ##     raise RuntimeError('agent_0 could not connect to mongodb')
 
         # some of the bridge addresses also need to be exposed to the workload
         if app_comm:
@@ -158,8 +158,8 @@ class Agent_0(rpu.Worker):
         self._start_sub_agents()
 
         # register the command callback which pulls the DB for commands
-        self.register_timed_cb(self._agent_command_cb,
-                               timer=self._cfg['db_poll_sleeptime'])
+     ## self.register_timed_cb(self._agent_command_cb,
+     ##                        timer=self._cfg['db_poll_sleeptime'])
 
         # registers the staging_input_queue as this is what we want to push
         # units to
@@ -173,15 +173,15 @@ class Agent_0(rpu.Worker):
                  'state'            : rps.PMGR_ACTIVE,
                  'resource_details' : {
                      'lm_info'      : self._lrms.lm_info.get('version_info'),
-                     'lm_detail'    : self._lrms.lm_info.get('lm_detail'), 
+                     'lm_detail'    : self._lrms.lm_info.get('lm_detail'),
                      'rm_info'      : self._lrms.lrms_info},
                  '$set'             : ['resource_details']}
         self.advance(pilot, publish=True, push=False)
 
         # register idle callback to pull for units -- which is the only action
         # we have to perform, really
-        self.register_timed_cb(self._check_units_cb,
-                               timer=self._cfg['db_poll_sleeptime'])
+     ## self.register_timed_cb(self._check_units_cb,
+     ##                        timer=self._cfg['db_poll_sleeptime'])
 
 
         # record hostname in profile to enable mapping of profile entries
@@ -198,9 +198,9 @@ class Agent_0(rpu.Worker):
         self.publish(rpc.CONTROL_PUBSUB, {'cmd' : 'terminate',
                                           'arg' : None})
 
-        self.unregister_timed_cb(self._check_units_cb)
+     ## self.unregister_timed_cb(self._check_units_cb)
         self.unregister_output(rps.AGENT_STAGING_INPUT_PENDING)
-        self.unregister_timed_cb(self._agent_command_cb)
+     ## self.unregister_timed_cb(self._agent_command_cb)
 
         if self._lrms:
             self._log.debug('stop    lrms %s', self._lrms)
@@ -216,8 +216,8 @@ class Agent_0(rpu.Worker):
 
         # we don't rely on the existence / viability of the update worker at
         # that point.
-        self._log.debug('update db state: %s: %s', state, self._final_cause)
-        self._update_db(state, self._final_cause)
+     ## self._log.debug('update db state: %s: %s', state, self._final_cause)
+     ## self._update_db(state, self._final_cause)  # FIXME: send event
 
 
     # --------------------------------------------------------------------------
@@ -358,7 +358,7 @@ class Agent_0(rpu.Worker):
                   'gpu_processes' : 0,
                   'gpu_threads'   : 0,
                 # 'nodes'         : [[node[0], node[1], [[0]], []]],
-                  'nodes'         : [{'name'    : node[0], 
+                  'nodes'         : [{'name'    : node[0],
                                      'uid'     : node[1],
                                      'core_map': [[0]],
                                      'gpu_map' : [],
