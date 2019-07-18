@@ -1,5 +1,21 @@
 #!/bin/sh
 
+# This script will pulll up two ZMQ queues: one for feeding messages from the
+# client to the agent, one for the reverse direction.  The queue lifetimes are
+# dteremined by heartbeats: once messages stop, the heartbeat timers will
+# eventually time out and the queue processes finish.
+#
+# The queue startup is synchronous, input and output endpoints will be printed
+# on stdout in the form:
+#
+#     ZMQ_PUT_IN  : tcp://192.168.8.100:44743
+#     ZMQ_PUT_OUT : tcp://192.168.8.100:38121
+#     ZMQ_GET_IN  : tcp://192.168.8.100:40219
+#     ZMQ_GET_OUT : tcp://192.168.8.100:40205 
+#
+# The port numbers are random.  If the ports happen to be shielded by
+# a firewall, ssh tunnels should be used to expose them on the required hosts.
+
 SID="$1"
 PID="$2"
 

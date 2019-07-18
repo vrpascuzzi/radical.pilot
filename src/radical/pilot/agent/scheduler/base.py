@@ -450,7 +450,7 @@ class AgentSchedulingComponent(rpu.Component):
     #
     def _schedule_units(self, units):
         '''
-        This is the main callback of the component, which is calledfor any
+        This is the main callback of the component, which is called for any
         incoming (set of) unit(s).  Units arriving here must always be in
         `AGENT_SCHEDULING_PENDING` state, and must always leave in either
         `AGENT_EXECUTING_PENDING` or in a FINAL state (`FAILED` or `CANCELED`).
@@ -643,7 +643,7 @@ class AgentSchedulingComponent(rpu.Component):
             if self._try_allocation(unit):
 
                 # allocated unit -- advance it
-                self.advance(unit, rps.AGENT_EXECUTING_PENDING, 
+                self.advance(unit, rps.AGENT_EXECUTING_PENDING,
                              publish=True, push=True)
 
                 # remove it from the wait queue
