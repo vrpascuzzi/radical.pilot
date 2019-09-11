@@ -178,17 +178,17 @@ class UMGRSchedulingComponent(rpu.Component):
                 pid = pilot['uid']
 
                 if pid not in self._pilots:
-                    self._pilots[pid] = {'role'  : None,
-                                         'state' : None,
-                                         'pilot' : None, 
-                                         'info'  : dict()  # scheduler info
-                                         }
+                    self._pilots[pid] = {'role' : None,
+                                         'state': None,
+                                         'pilot': None,
+                                         'info' : dict()  # scheduler info
+                                        }
 
                 target  = pilot['state']
                 current = self._pilots[pid]['state']
 
                 # enforce state model order
-                target, passed = rps._pilot_state_progress(pid, current, target) 
+                target, passed = rps._pilot_state_progress(pid, current, target)
 
                 if current != target:
                   # self._log.debug('%s: %s -> %s', pid,  current, target)
@@ -267,15 +267,14 @@ class UMGRSchedulingComponent(rpu.Component):
 
                     # if we have any early_bound units waiting for this pilots,
                     # advance them now
-                    early_units = self._early.get(pid)
-                    if early_units:
-                        for unit in early_units:
-                            if not unit.get('sandbox'):
-                                unit['sandbox'] = \
-                                    self._session._get_unit_sandbox(unit, pilot)
+                    early = self._early.get(pid)
+                    if early:
+                        # make sure we he unit sandboxes defined
+                        for unit in early:
 
-                        self.advance(early_units,
-                                     rps.UMGR_STAGING_INPUT_PENDING, 
+                            self._session._get_unit_sandbox(unit, pilot)
+
+                        self.advance(early, rps.UMGR_STAGING_INPUT_PENDING,
                                      publish=True, push=True)
 
             # let the scheduler know
@@ -422,17 +421,17 @@ class UMGRSchedulingComponent(rpu.Component):
                     pilot = self._pilots.get(pid, {}).get('pilot')
                     if pilot:
                         # make sure we have a sandbox defined, too
-                        if not unit.get('sandbox'):
+                        if not unit.get('unit_sandbox'):
                             pilot = self._pilots[pid]['pilot']
-                            unit['sandbox'] = self._session._get_unit_sandbox(unit, pilot)
+                            self._session._get_unit_sandbox(unit, pilot)
 
-                        self.advance(unit, rps.UMGR_STAGING_INPUT_PENDING, 
+                        self.advance(unit, rps.UMGR_STAGING_INPUT_PENDING,
                                      publish=True, push=True)
                     else:
                         # otherwise keep in `self._early` until we learn about
                         # the pilot
                         self._log.warn('got unit %s for unknown pilot %s', uid, pid)
-                        if pid not in self._early: 
+                        if pid not in self._early:
                             self._early[pid] = list()
                         self._early[pid].append(unit)
 
