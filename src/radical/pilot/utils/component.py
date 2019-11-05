@@ -4,6 +4,7 @@ import sys
 import copy
 import time
 import pprint
+import asyncio
 
 import threading       as mt
 import radical.utils   as ru
@@ -430,26 +431,63 @@ class Component(object):
 
     # --------------------------------------------------------------------------
     #
-    def start(self):
+    async def _main(self):
 
-        self._thread = mt.Thread(target=self._worker_thread)
-        self._thread.daemon = True
-        self._thread.start()
-
-
-    # --------------------------------------------------------------------------
-    #
-    def _worker_thread(self):
+        asyncio.set_event_loop(self._loop)
 
         self._initialize()
 
         while True:
-            try:
-                ret = self.work_cb()
-                if not ret:
-                    break
-            except:
-                self._log.exception('work cb error')
+
+            self.work_cb()
+            await asyncio.sleep(0.01)  # FIXME: configurable
+
+
+    # --------------------------------------------------------------------------
+    #
+    def _main_thread(self):
+
+
+        try:
+            asyncio.set_event_loop(self._loop)
+
+            self._task = self._loop.create_task(self._main())
+
+            self._loop.run_forever()
+
+        except asyncio.CancelledError:
+            self._log.info('cancel %s (%d)', self.uid, os.getpid())
+
+        except:
+            self._log.debug('=== mt 4')
+            self._log.exception('fail %s (%d)', self.uid, os.getpid())
+
+        finally:
+            self._log.debug('=== mt 5')
+            self._log.debug('stop %s (%d)', self.uid, os.getpid())
+
+
+
+    # --------------------------------------------------------------------------
+    #
+    def start(self):
+
+        self._log.debug('=== start 0')
+
+        self._loop   = asyncio.get_event_loop()
+        self._thread = mt.Thread(target=self._main_thread)
+        self._thread.daemon = True
+        self._thread.start()
+
+        self._log.debug('=== start 1')
+
+
+    # --------------------------------------------------------------------------
+    #
+    def stop(self, timeout=None):
+
+        self._task.cancel()
+        self._finalize()
 
 
     # --------------------------------------------------------------------------
@@ -594,25 +632,11 @@ class Component(object):
         except Exception:
             pass
 
+        self._prof.prof('term', uid=self._uid)
+
 
     def finalize(self):
         pass  # can be overloaded
-
-
-    # --------------------------------------------------------------------------
-    #
-    def stop(self, timeout=None):
-        '''
-        We need to terminate and join all threads, close all comunication
-        channels, etc.  But we trust on the correct invocation of the finalizers
-        to do all this, and thus here only forward the stop request to the base
-        class.
-        '''
-
-        self._log.info('stop %s (%s : %s) [%s]', self.uid, os.getpid(),
-                       ru.get_thread_name(), ru.get_caller_name())
-
-        self._finalize()
 
 
     # --------------------------------------------------------------------------
