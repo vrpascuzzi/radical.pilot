@@ -433,8 +433,6 @@ class Component(object):
     #
     async def _main(self):
 
-        asyncio.set_event_loop(self._loop)
-
         self._initialize()
 
         while True:
@@ -446,7 +444,6 @@ class Component(object):
     # --------------------------------------------------------------------------
     #
     def _main_thread(self):
-
 
         try:
             asyncio.set_event_loop(self._loop)
