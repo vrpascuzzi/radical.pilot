@@ -7,7 +7,9 @@ __license__   = "MIT"
 import sys
 import time
 
+import threading     as mt
 import setproctitle  as spt
+
 import radical.utils as ru
 
 
@@ -24,6 +26,10 @@ def main(cfg):
 
     If the config contains a `heartbeat` section, that section must be formatted
     as follows:
+
+    RCT comm bridges can be monitored via heartbeats (using a bridge-less pubsub
+    channel).  To enable that monitoring, the config should contains
+    a `heartbeat` section, that section must be formatted as follows:
 
         {
           'from'    : 'uid',
@@ -89,7 +95,8 @@ def main(cfg):
 
 def wrapped_main(cfg, uid, path):
 
-    log = ru.Logger(name=uid, ns='radical.pilot', path=path)
+    log  = ru.Logger(name=uid, ns='radical.pilot', path=path)
+    term = mt.Event()
 
     spt.setproctitle('rp.%s' % uid)
 
@@ -104,14 +111,15 @@ def wrapped_main(cfg, uid, path):
     bridge.start()
 
     # bridge runs - send heartbeats so that cmgr knows about it
-    hb_pub = ru.zmq.Publisher ('heartbeat', cfg.heartbeat.addr_pub)  # , log=log)
+    hb_pub = ru.zmq.Publisher('heartbeat', cfg.heartbeat.addr_pub, log=log)
 
     def hb_beat_cb():
         hb_pub.put('heartbeat', msg={'uid' : uid})
 
     def hb_term_cb(hb_uid):
         bridge.stop()
-        return False
+        term.set()
+        return None
 
     hb = ru.Heartbeat(uid=uid,
                       timeout=cfg.heartbeat.timeout,
@@ -133,7 +141,7 @@ def wrapped_main(cfg, uid, path):
                       topic='heartbeat', cb=hb_sub_cb)
 
     # all is set up - we can sit idle 'til end of time.
-    while True:
+    while not term.is_set():
         time.sleep(1)
 
 

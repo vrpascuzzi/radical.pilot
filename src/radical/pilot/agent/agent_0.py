@@ -27,16 +27,18 @@ from .    import lm        as rpa_lm
 #
 class Agent_0(rpu.Worker):
 
-    # This is the main agent.  It starts sub-agents and watches them.  If any of
-    # the sub-agents die, it will shut down the other sub-agents and itself.
-    #
-    # This class inherits the rpu.Worker, so that it can use its communication
-    # bridges and callback mechanisms.  Specifically, it will pull the DB for
-    # new tasks to be exexuted and forwards them to the agent's component
-    # network (see `work()`).  It will also watch the DB for any commands to be
-    # forwarded (pilot termination, task cancelation, etc), and will take care
-    # of heartbeat messages to be sent to the client module.  To do all this, it
-    # initializes a DB connection in `initialize()`.
+    '''
+    This is the main agent.  It starts sub-agents and watches them.  If any of
+    the sub-agents die, it will shut down the other sub-agents and itself.
+
+    This class inherits the rpu.Worker, so that it can use its communication
+    bridges and callback mechanisms.  Specifically, it will pull the DB for
+    new tasks to be exexuted and forwards them to the agent's component
+    network (see `work()`).  It will also watch the DB for any commands to be
+    forwarded (pilot termination, task cancelation, etc), and will take care
+    of heartbeat messages to be sent to the client module.  To do all this, it
+    initializes a DB connection in `initialize()`.
+    '''
 
     # --------------------------------------------------------------------------
     #
@@ -45,6 +47,7 @@ class Agent_0(rpu.Worker):
         self._cfg     = cfg
         self._pid     = cfg.pid
         self._pmgr    = cfg.pmgr
+        self._pwd     = cfg.pilot_sandbox
         self._session = session
         self._log     = session._log
 
@@ -108,8 +111,9 @@ class Agent_0(rpu.Worker):
     def _hb_term_cb(self):
 
         self._cmgr.close()
-
         self._log.warn('=== hb termination')
+
+        return None
 
 
     # --------------------------------------------------------------------------
@@ -118,21 +122,7 @@ class Agent_0(rpu.Worker):
 
         # TODO: this needs to evaluate the bootstrapper's HOSTPORT
         self._dbs = DBSession(sid=self._cfg.sid, dburl=self._cfg.dburl,
-                              cfg=self._cfg, logger=self._log)
-
-      # # Check for the RADICAL_PILOT_DB_HOSTPORT env var, which will hold
-      # # the address of the tunnelized DB endpoint. If it exists, we
-      # # overrule the agent config with it.
-      # dburl    = ru.Url(self._cfg.dburl)
-      # hostport = os.environ.get('RADICAL_PILOT_DB_HOSTPORT')
-      # if hostport:
-      #     dburl.host, dburl.port = hostport.split(':')
-      #     self._cfg['dburl'] = str(dburl)
-      #
-      # # connect to the DB
-      # _, db, _, _, _  = ru.mongodb_connect(dburl)
-      # self._coll      = db[self._cfg['sid']]
-
+                              cfg=self._cfg, log=self._log)
 
     # --------------------------------------------------------------------------
     #
@@ -259,6 +249,40 @@ class Agent_0(rpu.Worker):
                             {'$set': {'stdout' : rpu.tail(out),
                                       'stderr' : rpu.tail(err),
                                       'logfile': rpu.tail(log)} })
+
+
+    # --------------------------------------------------------------------------
+    #
+    def _update_db(self, state, msg=None):
+
+        # NOTE: we do not push the final pilot state, as that is done by the
+        #       bootstrapper *after* this poilot *actually* finished.
+
+        self._log.info('pilot state: %s', state)
+        self._log.info('rusage: %s', rpu.get_rusage())
+        self._log.info(msg)
+
+        if state == rps.FAILED:
+            self._log.info(ru.get_trace())
+
+        out = None
+        err = None
+        log = None
+
+        try   : out = open('./agent_0.out', 'r').read(1024)
+        except: pass
+        try   : err = open('./agent_0.err', 'r').read(1024)
+        except: pass
+        try   : log = open('./agent_0.log', 'r').read(1024)
+        except: pass
+
+        ret = self._dbs._c.update({'type': 'pilot',
+                                   'uid' : self._pid},
+                                  {'$set': {'stdout' : rpu.tail(out),
+                                            'stderr' : rpu.tail(err),
+                                            'logfile': rpu.tail(log)}
+                                  })
+        self._log.debug('update ret: %s', ret)
 
 
     # --------------------------------------------------------------------
@@ -421,8 +445,7 @@ class Agent_0(rpu.Worker):
                             return False  # proc is gone - terminate
             # ------------------------------------------------------------------
 
-            # the agent is up - let the watcher manage it from here
-            self.register_watchable(_SA(sa, cmdline, log=self._log))
+            # FIXME: register heartbeats?
 
         self._log.debug('start_sub_agents done')
 
@@ -480,7 +503,7 @@ class Agent_0(rpu.Worker):
                 self.publish(rpc.CONTROL_PUBSUB, {'cmd' : 'cancel_units',
                                                   'arg' : arg})
             else:
-                self._log.error('could not interpret cmd "%s" - ignore', cmd)
+                self._log.warn('could not interpret cmd "%s" - ignore', cmd)
 
         return True
 

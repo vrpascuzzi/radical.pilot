@@ -5,14 +5,11 @@ __license__   = "MIT"
 import os
 import sys
 import copy
-import glob
-import threading
 
 import radical.utils                as ru
 import radical.saga                 as rs
 import radical.saga.utils.pty_shell as rsup
 
-from .resource_config import ResourceConfig
 from .db              import DBSession
 from .                import utils          as rpu
 
@@ -113,6 +110,11 @@ class Session(rs.Session):
             for k in ['sid', 'base', 'path']:
                 assert(k in self._cfg), 'non-primary session misses %s' % k
 
+        # change RU defaults to point logfiles etc. to the session sandbox
+        def_cfg             = ru.DefaultConfig()
+        def_cfg.log_dir     = self._cfg.path
+        def_cfg.report_dir  = self._cfg.path
+        def_cfg.profile_dir = self._cfg.path
 
         self._uid  = self._cfg.sid
 
@@ -134,7 +136,7 @@ class Session(rs.Session):
         rs.Session.__init__(self, uid=self._uid)
 
         # cache sandboxes etc.
-        self._cache_lock = threading.RLock()
+        self._cache_lock = ru.RLock()
         self._cache      = {'resource_sandbox' : dict(),
                             'session_sandbox'  : dict(),
                             'pilot_sandbox'    : dict(),
@@ -165,7 +167,7 @@ class Session(rs.Session):
         # create/connect database handle on primary sessions
         try:
             self._dbs = DBSession(sid=self.uid, dburl=dburl,
-                                  cfg=self._cfg, logger=self._log)
+                                  cfg=self._cfg, log=self._log)
 
             py_version_detail = sys.version.replace("\n", " ")
             from . import version_detail as rp_version_detail
@@ -184,7 +186,14 @@ class Session(rs.Session):
         # heartbeat.  'self._cmgr.close()` should be called during termination
         self._cmgr = rpu.ComponentManager(self._cfg)
         self._cmgr.start_bridges()
-        self._cmgr.start_components()
+
+        try:
+            self._cmgr.start_components()
+        except:
+            sys.stdout.write('============= session\n')
+            sys.stdout.flush()
+            raise
+
 
         # expose the cmgr's heartbeat channel to anyone who wants to use it
         self._cfg.heartbeat = self._cmgr.cfg.heartbeat
@@ -210,7 +219,7 @@ class Session(rs.Session):
         return self
 
     def __exit__(self, type, value, traceback):
-        self.close()
+        self.close(download=True)
 
 
     # --------------------------------------------------------------------------
@@ -418,8 +427,8 @@ class Session(rs.Session):
         This is a thin wrapper around `ru.Logger()` which makes sure that
         log files end up in a separate directory with the name of `session.uid`.
         '''
-        return ru.Logger(name=name, ns='radical.pilot', targets=['.'],
-                         path=self._cfg.path, level=level)
+        return ru.Logger(name=name, ns='radical.pilot', path=self._cfg.path,
+                         targets=['.'], level=level)
 
 
     # --------------------------------------------------------------------------
@@ -432,8 +441,8 @@ class Session(rs.Session):
 
         if not self._reporter:
             self._reporter = ru.Reporter(name=name, ns='radical.pilot',
-                                         targets=['stdout'],
-                                         path=self._cfg.path)
+                                         path=self._cfg.path,
+                                         targets=['stdout'])
         return self._reporter
 
 
@@ -445,8 +454,7 @@ class Session(rs.Session):
         log files end up in a separate directory with the name of `session.uid`.
         '''
 
-        prof = ru.Profiler(name=name, ns='radical.pilot',
-                                      path=self._cfg.path)
+        prof = ru.Profiler(name=name, ns='radical.pilot', path=self._cfg.path)
 
         return prof
 
@@ -588,33 +596,32 @@ class Session(rs.Session):
     # -------------------------------------------------------------------------
     #
     def add_resource_config(self, resource_config):
-        '''Adds a new :class:`radical.pilot.ResourceConfig` to the PilotManager's
-           dictionary of known resources, or accept a string which points to
-           a configuration file.
+        '''
+        Adds a new :class:`ru.Config` to the session's dictionary of known
+        resources, or accept a string which points to a configuration file.
 
-           For example::
+        For example::
 
-                  rc = radical.pilot.ResourceConfig(label="mycluster")
-                  rc.job_manager_endpoint = "ssh+pbs://mycluster
-                  rc.filesystem_endpoint  = "sftp://mycluster
-                  rc.default_queue        = "private"
-                  rc.bootstrapper         = "default_bootstrapper.sh"
+               rc = ru.Config("./mycluster.json")
+               rc.job_manager_endpoint = "ssh+pbs://mycluster
+               rc.filesystem_endpoint  = "sftp://mycluster
+               rc.default_queue        = "private"
 
-                  pm = radical.pilot.PilotManager(session=s)
-                  pm.add_resource_config(rc)
+               session = rp.Session()
+               session.add_resource_config(rc)
 
-                  pd = radical.pilot.ComputePilotDescription()
-                  pd.resource = "mycluster"
-                  pd.cores    = 16
-                  pd.runtime  = 5 # minutes
+               pd = rp.ComputePilotDescription()
+               pd.resource = "mycluster"
+               pd.cores    = 16
+               pd.runtime  = 5 # minutes
 
-                  pilot = pm.submit_pilots(pd)
+               pilot = pm.submit_pilots(pd)
         '''
 
         if isinstance(resource_config, str):
 
             # let exceptions fall through
-            rcs = ResourceConfig.from_file(resource_config)
+            rcs = ru.Config('radical.pilot.resource', name=resource_config)
 
             for rc in rcs:
                 self._log.info('load rcfg for %s' % rc)

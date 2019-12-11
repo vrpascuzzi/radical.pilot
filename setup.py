@@ -96,7 +96,7 @@ def get_version(mod_root):
             'git-error'      in version_detail or \
             'not-a-git-repo' in version_detail or \
             'not-found'      in version_detail or \
-            'fatal'          in version_detail    :
+            'fatal'          in version_detail :
             version = version_base
         elif '@' not in version_base:
             version = '%s-%s' % (version_base, version_detail)
@@ -172,12 +172,6 @@ class RunTwine(Command):
 
 # ------------------------------------------------------------------------------
 #
-if  sys.hexversion <= 0x03050000:
-    raise RuntimeError('SETUP ERROR: %s requires Python 3.5 or higher' % name)
-
-
-# ------------------------------------------------------------------------------
-#
 # This copies the contents like examples/ dir under sys.prefix/share/$name
 # It needs the MANIFEST.in entries to work.
 base = 'share/%s' % name
@@ -215,8 +209,8 @@ setup_args = {
         'Environment :: Console',
         'License :: OSI Approved :: MIT License',
         'Programming Language :: Python',
-        'Programming Language :: Python :: 2',
-        'Programming Language :: Python :: 2.7',
+        'Programming Language :: Python :: 3',
+        'Programming Language :: Python :: 3.5',
         'Topic :: Utilities',
         'Topic :: System :: Distributed Computing',
         'Topic :: Scientific/Engineering',
@@ -252,8 +246,8 @@ setup_args = {
     'package_data'       : {'': ['*.txt', '*.sh', '*.json', '*.gz', '*.c',
                                  '*.md', 'VERSION', 'SDIST', sdist_name]},
   # 'setup_requires'     : ['pytest-runner'],
-    'install_requires'   : ['radical.utils>=0.60',
-                            'radical.saga>=0.60',
+    'install_requires'   : ['radical.utils>=0.90',
+                            'radical.saga>=0.90',
                             'pymongo',
                             'python-hostlist',
                             'netifaces',
@@ -294,4 +288,5 @@ os.system('rm -rf src/%s.egg-info' % name)
 
 
 # ------------------------------------------------------------------------------
+
 

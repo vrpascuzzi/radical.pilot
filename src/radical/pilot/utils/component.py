@@ -1,9 +1,7 @@
 
 import os
-import sys
 import copy
 import time
-import pprint
 import asyncio
 
 import threading       as mt
@@ -16,6 +14,16 @@ from ..          import states         as rps
 # ------------------------------------------------------------------------------
 #
 class ComponentManager(object):
+    '''
+    RP spans a hierarchy of component instances: the application has a pmgr and
+    umgr, and the umgr has a staging component and a scheduling component, and
+    the pmgr has a launching component, and components also can have bridges,
+    etc. etc.  This ComponentManager centralises the code needed to spawn,
+    manage and terminate such components - any code which needs to create
+    component should create a ComponentManager instance and pass the required
+    component and bridge layout and configuration.  Callng `stop()` on the cmgr
+    will terminate the components and brisged.
+    '''
 
     # --------------------------------------------------------------------------
     #
@@ -74,7 +82,7 @@ class ComponentManager(object):
     #
     def _hb_sub_cb(self, topic, msg):
         '''
-        keep treack of heartbeats for all bridges/components we know
+        keep track of heartbeats for all bridges/components we know
         '''
 
       # self._log.debug('hb_sub %s: get %s check', self.uid, msg['uid'])
@@ -107,7 +115,7 @@ class ComponentManager(object):
         #       terminate and suicidally kill the very process it is living in.
         #       Make sure all required cleanup is done at this point!
 
-        return False
+        return None
 
 
     # --------------------------------------------------------------------------
@@ -203,7 +211,7 @@ class ComponentManager(object):
                 ccfg.path        = cfg.path
                 ccfg.heartbeat   = cfg.heartbeat
 
-                ccfg.merge(scfg, policy=ru.PRESERVE, logger=self._log)
+                ccfg.merge(scfg, policy=ru.PRESERVE, log=self._log)
 
                 fname = '%s/%s.json' % (cfg.path, ccfg.uid)
                 ccfg.write(fname)
@@ -469,22 +477,32 @@ class Component(object):
     #
     def start(self):
 
-        self._log.debug('=== start 0')
-
         self._loop   = asyncio.get_event_loop()
         self._thread = mt.Thread(target=self._main_thread)
         self._thread.daemon = True
         self._thread.start()
 
-        self._log.debug('=== start 1')
-
 
     # --------------------------------------------------------------------------
     #
-    def stop(self, timeout=None):
+    def _worker_thread(self, sync):
 
-        self._task.cancel()
-        self._finalize()
+        try:
+            self._initialize()
+
+        except Exception:
+            self._log.exception('worker thread initialization failed')
+            return
+
+        sync.set()
+
+        while not self._term.is_set():
+            try:
+                ret = self.work_cb()
+                if not ret:
+                    break
+            except:
+                self._log.exception('work cb error [ignored]')
 
 
     # --------------------------------------------------------------------------
@@ -621,6 +639,9 @@ class Component(object):
 
         # call component level finalize, before we tear down channels
         self.finalize()
+
+        for thread in self._threads.values():
+            thread.stop()
 
         self._log.debug('%s close prof', self.uid)
         try:
