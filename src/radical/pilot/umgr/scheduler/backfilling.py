@@ -3,9 +3,10 @@ __copyright__ = "Copyright 2013-2016, http://radical.rutgers.edu"
 __license__   = "MIT"
 
 import os
-import threading
 
-from ... import states    as rps
+import radical.utils   as ru
+
+from ... import states as rps
 
 from .base import UMGRSchedulingComponent, ADDED
 
@@ -23,7 +24,7 @@ _BF_START_VAL = rps._pilot_state_value(_BF_START)
 _BF_STOP_VAL  = rps._pilot_state_value(_BF_STOP)
 
 
-# ==============================================================================
+# ------------------------------------------------------------------------------
 #
 class Backfilling(UMGRSchedulingComponent):
 
@@ -38,8 +39,8 @@ class Backfilling(UMGRSchedulingComponent):
     #
     def _configure(self):
 
-        self._wait_pool = dict()             # set of unscheduled units
-        self._wait_lock = threading.RLock()  # look on the above set
+        self._wait_pool = dict()      # set of unscheduled units
+        self._wait_lock = ru.RLock()  # look on the above set
 
         self._pids = list()
         self._idx  = 0
@@ -61,11 +62,14 @@ class Backfilling(UMGRSchedulingComponent):
                 pilot = self._pilots[pid]['pilot']
                 cores = pilot['description']['cores']
                 hwm   = int(cores * _HWM / 100)
-                self._pilots[pid]['info'] = {'cores' : cores,
+                self._pilots[pid]['info'] = {
+                                             'cores' : cores,
                                              'hwm'   : hwm,
-                                             'used'  : 0, 
-                                             'units' : list(),
-                                             'done'  : list()}
+                                             'used'  : 0,
+                                             'units' : list(),  # assigned units
+                                             'done'  : list(),  # executed units
+                                            }
+
             # now we can use the pilot
             self._pids += pids
             self._schedule_units()
@@ -103,22 +107,19 @@ class Backfilling(UMGRSchedulingComponent):
 
                 state = self._pilots[pid]['state']
 
-              # self._log.debug('=== update pilot: %s %s', pid, state)
+              # self._log.debug('update pilot: %s %s', pid, state)
 
                 if  rps._pilot_state_value(state) < _BF_START_VAL:
-                  # self._log.debug('=== early')
                     # not eligible, yet
                     continue
 
                 if  rps._pilot_state_value(state) > _BF_STOP_VAL:
-                  # self._log.debug('=== late')
                     # not eligible anymore
                     continue
 
                 # this pilot is eligible.  Stop checking the others, and attempt
                 # reschedule
                 action = True
-              # self._log.debug('break')
                 break
 
       # self._log.debug('action: %s', action)
@@ -139,7 +140,7 @@ class Backfilling(UMGRSchedulingComponent):
         with self._pilots_lock, self._wait_lock:
 
             for unit in units:
-        
+
                 uid   = unit['uid']
                 state = unit['state']
                 pid   = unit.get('pilot', '')
@@ -214,7 +215,7 @@ class Backfilling(UMGRSchedulingComponent):
     #
     def _schedule_units(self):
         """
-        We have a set of units which we can place over a set of pilots.  
+        We have a set of units which we can place over a set of pilots.
 
         The overall objective is to keep pilots busy while load balancing across
         all pilots, even those which might yet to get added.  We achieve that
@@ -223,7 +224,7 @@ class Backfilling(UMGRSchedulingComponent):
           - for each pilot which is being added, no matter the state:
             - assign sufficient units to the pilot that it can run 'n'
               generations of them, 'n' being a tunable parameter called
-              'RADICAL_PILOT_BACKFILLING_HWM'.  
+              'RADICAL_PILOT_BACKFILLING_HWM'.
 
           - for each unit being completed (goes out of AGENT_EXECUTING state)
             - determine the pilot which executed it
@@ -333,7 +334,7 @@ class Backfilling(UMGRSchedulingComponent):
 
         # advance scheduled units
         if scheduled:
-            self.advance(scheduled, rps.UMGR_STAGING_INPUT_PENDING, 
+            self.advance(scheduled, rps.UMGR_STAGING_INPUT_PENDING,
                          publish=True, push=True)
 
 
