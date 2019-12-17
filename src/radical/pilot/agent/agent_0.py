@@ -91,7 +91,7 @@ class Agent_0(rpu.Worker):
         self._hb.start()
 
         # register pmgr heartbeat
-        self._log.warn('=== hb init for %s', self._pmgr)
+        self._log.info('hb init for %s', self._pmgr)
         self._hb.beat(uid=self._pmgr)
 
 
@@ -99,7 +99,7 @@ class Agent_0(rpu.Worker):
     #
     def _hb_check(self):
 
-        self._log.debug('=== hb check')
+        self._log.debug('hb check')
 
 
     # --------------------------------------------------------------------------
@@ -107,7 +107,7 @@ class Agent_0(rpu.Worker):
     def _hb_term_cb(self):
 
         self._cmgr.close()
-        self._log.warn('=== hb termination')
+        self._log.warn('hb termination')
 
         return None
 

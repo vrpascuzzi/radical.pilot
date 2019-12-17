@@ -957,14 +957,10 @@ class Default(PMGRLaunchingComponent):
     #
     def _prepare_pilot(self, resource, rcfg, pilot, expand):
 
+        sid = self._session.uid
         pid = pilot["uid"]
         ret = {'ft': list(),
                'jd': None  }
-
-        # ----------------------------------------------------------------------
-        # Database connection parameters
-        sid           = self._session.uid
-     ## database_url  = self._session.dburl
 
         # some default values are determined at runtime
         default_virtenv = '%%(resource_sandbox)s/ve.%s.%s' % \
@@ -990,7 +986,6 @@ class Default(PMGRLaunchingComponent):
         agent_scheduler         = rcfg.get('agent_scheduler')
         tunnel_bind_device      = rcfg.get('tunnel_bind_device')
         default_queue           = rcfg.get('default_queue')
-        forward_tunnel_endpoint = rcfg.get('forward_tunnel_endpoint')
         lrms                    = rcfg.get('lrms')
         mpi_launch_method       = rcfg.get('mpi_launch_method', '')
         pre_bootstrap_0         = rcfg.get('pre_bootstrap_0', [])
