@@ -221,7 +221,6 @@ setup_args = {
     'package_dir'        : {'': 'src'},
     'scripts'            : [
                             'bin/radical-pilot-agent',
-                            'bin/radical-pilot-agent',
                             'bin/radical-pilot-agent-bridge',
                             'bin/radical-pilot-agent-funcs',
                             'bin/radical-pilot-agent-statepush',
@@ -242,6 +241,7 @@ setup_args = {
                             'bin/radical-pilot-stats',
                             'bin/radical-pilot-stats.plot',
                             'bin/radical-pilot-version',
+                            'bin/radical-pilot-worker',
                            ],
     'package_data'       : {'': ['*.txt', '*.sh', '*.json', '*.gz', '*.c',
                                  '*.md', 'VERSION', 'SDIST', sdist_name]},
