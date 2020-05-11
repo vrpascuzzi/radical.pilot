@@ -205,7 +205,7 @@ class ComponentManager(object):
 
         for cname, ccfg in cfg.get('components', {}).items():
 
-            for count in range(ccfg.get('count', 1)):
+            for _ in range(ccfg.get('count', 1)):
 
                 ccfg.uid         = ru.generate_id(cname, ns=self._sid)
                 ccfg.cmgr        = self.uid
@@ -524,7 +524,7 @@ class Component(object):
         from radical.pilot import pmgr      as rppm
         from radical.pilot import umgr      as rpum
         from radical.pilot import agent     as rpa
-        from radical.pilot import constants as rpc
+      # from radical.pilot import constants as rpc
 
         comp = {
                 rpc.UPDATE_WORKER                  : rpw.Update,
@@ -619,7 +619,7 @@ class Component(object):
         initialization of component base class goes here
         '''
         # components can always publish logs, state updates and control messages
-        self.register_publisher(rpc.LOG_PUBSUB)
+     #  self.register_publisher(rpc.LOG_PUBSUB)
         self.register_publisher(rpc.STATE_PUBSUB)
         self.register_publisher(rpc.CONTROL_PUBSUB)
 
@@ -937,7 +937,7 @@ class Component(object):
 
     # --------------------------------------------------------------------------
     #
-    def register_subscriber(self, pubsub, cb, cb_data=None):
+    def register_subscriber(self, pubsub, cb):
         '''
         This method is complementary to the register_publisher() above: it
         registers a subscription to a pubsub channel.  If a notification
@@ -945,7 +945,6 @@ class Component(object):
         invoked.  The callback MUST have one of the signatures:
 
           callback(topic, msg)
-          callback(topic, msg, cb_data)
 
         where 'topic' is set to the name of the pubsub channel.
 
