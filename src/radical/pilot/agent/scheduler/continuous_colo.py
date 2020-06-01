@@ -63,10 +63,10 @@ from ... import compute_unit_description as rpcud
 #   get scheduled (unless more tasks arrive to complete the batch).
 #
 #
-#   task.1  ns=foo
-#   task.2  ns=foo
-#   task.3  ns=foo
-#   task.4  ns=foo
+#   task.1  node=n1
+#   task.2  node=n1
+#   task.3  node=n1
+#   task.4  node=n1
 #
 #   tasks 1 to 4 will land on the same node, possibly at different times.
 #
