@@ -59,7 +59,7 @@ from ... import compute_unit_description as rpcud
 #   task.3  node=n1  batch=3
 #   task.4  node=n1  batch=3
 #
-#   tasks 1 to 3 will run concurrently on the same node, but task 4 will neverr
+#   tasks 1 to 3 will run concurrently on the same node, but task 4 will never
 #   get scheduled (unless more tasks arrive to complete the batch).
 #
 #
