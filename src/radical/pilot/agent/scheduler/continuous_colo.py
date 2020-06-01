@@ -20,10 +20,6 @@ from ... import compute_unit_description as rpcud
 #   colocate : {'node'  : <string>,
 #               'batch' : <int>}
 #
-# NOTE: If a string is given instead of a dict, it is interpreted as `node`; if
-#       an integer is given, it is interprerted a `batch` size.
-#
-#
 # The scheduler attempts to collect bag of tasks from the stream of incoming
 # tasks to schedule them together (in time snad space): tasks which specify the
 # same `node` considered for colocation,and will be scheduled onto the same node
@@ -82,10 +78,20 @@ from ... import compute_unit_description as rpcud
 # The dominant use case for this scheduler is the execution of coupled
 # applications which exchange data via shared local files or shared memory.
 #
+#
 # NOTE: tasks exit codes don't influence the scheduling algorithm: subsequent
 #       task batches will be scheduled even if the first batch completed with
 #       a non=zero exit code.
 #
+#       If a string is specified instead of a dict, it is interpreted as `node`.
+#       If an integer is specified, it is interprerted a `batch` size.
+#
+#       If `node` is not specified, no node localition is enforced - the
+#       algorithm only respects time locality (batch).
+#
+#       If `batch` is not specified, no time colocation if enfoced - the
+#       algorithm only respects node locality.  This is the same behaviour as
+#       with `batch=1`.
 #
 class ContinuousColo(Continuous):
 
