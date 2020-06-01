@@ -14,23 +14,78 @@ from ... import compute_unit_description as rpcud
 
 # ------------------------------------------------------------------------------
 #
-# This is a simple extension of the Continuous scheduler which evaluates the
+# This is an extension of the Continuous scheduler which evaluates the
 # `colocate` tag of arriving units, which is expected to have the form
 #
-#   colocate : {'ns'   : <string>,
-#               'size' : <int>}
+#   colocate : {'node'  : <string>,
+#               'batch' : <int>}
 #
-# where 'ns' (for namespace) is a bag ID, and 'size' is the number of tasks in
-# that bag of tasks that need to land on the same host.  The semantics of the
-# scheduler is that, for any given namespace, it will schedule either all tasks
-# in that ns at the same time on the same node, or will schedule no task of that
-# ns at all.
+# NOTE: If a string is given instead of a dict, it is interpreted as `node`; if
+#       an integer is given, it is interprerted a `batch` size.
+#
+#
+# The scheduler attempts to collect bag of tasks from the stream of incoming
+# tasks to schedule them together (in time snad space): tasks which specify the
+# same `node` considered for colocation,and will be scheduled onto the same node
+# (this holds even if the tasks are scheduled at different times).  If a `batch`
+# size is specified, and that number of tasks will _concurrently_ be placed onto
+# the same node (the `node` string does not need to correspond to an actual node
+# name).
+#
+# Examples:
+#   task.1  node=n1  batch=2
+#   task.2  node=n1  batch=2
+#   task.3  node=n2  batch=2
+#   task.4  node=n2  batch=2
+#
+#   tasks 1 and 2 will run concurrently on the same node, tasks 3 and 4 will
+#   also run concurrently on one node (possibly at a different time).  The node
+#   for the first batch may or may not be the same as for the second batch.
+#
+#
+#   task.1  node=n1  batch=2
+#   task.2  node=n1  batch=2
+#   task.3  node=n1  batch=2
+#   task.4  node=n1  batch=2
+#
+#   tasks 1 and 2 will run concurrently on the same node, tasks 3 and 4 will
+#   also run concurrently on _the same_ node (possibly at a different time).
+#   The node for the first batch may or may not be the same as for the second
+#   batch.
+#
+#
+#   task.1  node=n1  batch=3
+#   task.2  node=n1  batch=3
+#   task.3  node=n1  batch=3
+#   task.4  node=n1  batch=3
+#
+#   tasks 1 to 3 will run concurrently on the same node, but task 4 will neverr
+#   get scheduled (unless more tasks arrive to complete the batch).
+#
+#
+#   task.1  ns=foo
+#   task.2  ns=foo
+#   task.3  ns=foo
+#   task.4  ns=foo
+#
+#   tasks 1 to 4 will land on the same node, possibly at different times.
+#
+#
+#   task.1  batch=4
+#   task.2  batch=4
+#   task.3  batch=4
+#   task.4  batch=4
+#
+#   tasks 1 to 4 will run concurrently, but possibly on different nodes.
+#
 #
 # The dominant use case for this scheduler is the execution of coupled
 # applications which exchange data via shared local files or shared memory.
 #
-# FIXME: - failed tasks cannot yet considered, subsequent tasks in the same ns
-#          will be scheduled anyway.
+# NOTE: tasks exit codes don't influence the scheduling algorithm: subsequent
+#       task batches will be scheduled even if the first batch completed with
+#       a non=zero exit code.
+#
 #
 class ContinuousColo(Continuous):
 
