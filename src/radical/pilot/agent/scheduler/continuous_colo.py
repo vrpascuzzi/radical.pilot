@@ -8,41 +8,87 @@ import radical.utils as ru
 
 from .continuous import Continuous
 
-from ... import states    as rps
+from ... import states                   as rps
 from ... import compute_unit_description as rpcud
 
 
-# ------------------------------------------------------------------------------
+# The BOT Scheduler schedules tasks just like the continuous scheduler (and in
+# fact calls the continuous scheduler to do so), but additionally adds structure
+# to the stream of tasks, dividing them into chunks, aka 'bag of tasks' (BoT).
+# These bag of tasks can have some additional constraints and relations:
 #
-# This is an extension of the Continuous scheduler which evaluates the
-# `colocate` tag of arriving units, which is expected to have the form
+#   - BoTs can be ordered, i.e., tasks from a BoT with order `n` are not started
+#     before all tasks from all BoTs of order `m` with `m < n`.
 #
-#   colocate : {'node'  : <string>,
-#               'batch' : <int>}
+#   - Task concurrency: tasks in a BoT can be configured to get started at
+#     the same time (*)
 #
-# The scheduler attempts to collect bag of tasks from the stream of incoming
-# tasks to schedule them together (in time snad space): tasks which specify the
-# same `node` considered for colocation,and will be scheduled onto the same node
-# (this holds even if the tasks are scheduled at different times).  If a `batch`
-# size is specified, and that number of tasks will _concurrently_ be placed onto
-# the same node (the `node` string does not need to correspond to an actual node
-# name).
+#   - Task co-location: tasks in a BoT can be configured to all land on the same
+#     set of (**) compute nodes.
+#
+# To make use of these facilities, tasks will need to be tagged to belong to
+# a certain BoT.  Since the RP agent will receive tasks in a continuous stream,
+# the tag information will also have to include the size of the BoT, so that the
+# scheduler can judge is a bag is complete.  The tag can further include flags
+# to trigger concurrency and/or co-locality:
+#
+#    tags = {
+#        'bot' : {
+#            'id'         : 'foo',  # mandatory
+#            'size'       : 4,      # optional, default: 1
+#            'order'      : 2,      # optional, default: None
+#            'concurrency': False,  # optional, default: False
+#            'co-location': False   # optional, default: False
+#        }
+#    }
+#
+#
+# Note that the tags for all tasks in a BoT must be consistent - otherwise all
+# tasks in that bag are marked as `FAILED`.
+#
+# Note that a BoT ID can be reused.  For example, 4 tasks can share a BoT ID
+# `bot1` of size `2`.  The scheduler will collect 2 tasks and run them.  If it
+# encounters the same BoT ID again, it will again collect 2 tasks.  If
+# co-locality is enabled, then the second batch will run on the same node as the
+# first batch.  If the BoT has an order defined, then the first batch will need
+# to see at least one BoT for each lower order completed before the BoT is
+# eligible.  If a subsequent batch is received for the same BoT ID, then at
+# least two batches of the lower order BoT need to run first, etc.
+#
+#
+# (*)  'at the same time': small differences in startup time may occur due to
+#      RP agent and HPC system configuration, RP though guarantees that the BoT
+#      becomes eligible for execution at the exact same time.
+#
+# (**) 'same set of compute nodes': the current implementation can only handle
+#      co-location for tasks of size up to a single node.
+#
 #
 # Examples:
-#   task.1  node=n1  batch=2
-#   task.2  node=n1  batch=2
-#   task.3  node=n2  batch=2
-#   task.4  node=n2  batch=2
+#
+#   task.1  id=bot1  size=4
+#   task.2  id=bot1  size=4
+#   task.3  id=bot1  size=4
+#   task.4  id=bot1  size=4
+#
+#   The tasks 1-4 will be scheduled and executed individually - but only become
+#   eligible for execution once all 4 tasks arrive in the scheduler.
+#
+#
+#   task.1  id=bot1  size=2  order=None  concurrency=True  co-location=True
+#   task.2  id=bot1  size=2  order=None  concurrency=True  co-location=True
+#   task.3  id=bot2  size=2  order=None  concurrency=True  co-location=True
+#   task.4  id=bot2  size=2  order=None  concurrency=True  co-location=True
 #
 #   tasks 1 and 2 will run concurrently on the same node, tasks 3 and 4 will
 #   also run concurrently on one node (possibly at a different time).  The node
 #   for the first batch may or may not be the same as for the second batch.
 #
 #
-#   task.1  node=n1  batch=2
-#   task.2  node=n1  batch=2
-#   task.3  node=n1  batch=2
-#   task.4  node=n1  batch=2
+#   task.1  id=bot1  size=2
+#   task.2  id=bot1  size=2
+#   task.3  id=bot1  size=2
+#   task.4  id=bot1  size=2
 #
 #   tasks 1 and 2 will run concurrently on the same node, tasks 3 and 4 will
 #   also run concurrently on _the same_ node (possibly at a different time).
@@ -50,27 +96,27 @@ from ... import compute_unit_description as rpcud
 #   batch.
 #
 #
-#   task.1  node=n1  batch=3
-#   task.2  node=n1  batch=3
-#   task.3  node=n1  batch=3
-#   task.4  node=n1  batch=3
+#   task.1  id=bot1  size=3
+#   task.2  id=bot1  size=3
+#   task.3  id=bot1  size=3
+#   task.4  id=bot1  size=3
 #
 #   tasks 1 to 3 will run concurrently on the same node, but task 4 will never
 #   get scheduled (unless more tasks arrive to complete the batch).
 #
 #
-#   task.1  node=n1
-#   task.2  node=n1
-#   task.3  node=n1
-#   task.4  node=n1
+#   task.1  id=bot1
+#   task.2  id=bot1
+#   task.3  id=bot1
+#   task.4  id=bot1
 #
 #   tasks 1 to 4 will land on the same node, possibly at different times.
 #
 #
-#   task.1  batch=4
-#   task.2  batch=4
-#   task.3  batch=4
-#   task.4  batch=4
+#   task.1  size=4
+#   task.2  size=4
+#   task.3  size=4
+#   task.4  size=4
 #
 #   tasks 1 to 4 will run concurrently, but possibly on different nodes.
 #
@@ -84,14 +130,15 @@ from ... import compute_unit_description as rpcud
 #       a non=zero exit code.
 #
 #       If a string is specified instead of a dict, it is interpreted as `node`.
-#       If an integer is specified, it is interprerted a `batch` size.
+#       If an integer is specified, it is interpreted a batch `size`.
 #
-#       If `node` is not specified, no node localition is enforced - the
-#       algorithm only respects time locality (batch).
+#       If `node` is not specified, no node locality is enforced - the
+#       algorithm only respects time locality (`size`).
 #
-#       If `batch` is not specified, no time colocation if enfoced - the
+#       If `size` is not specified, no time colocation if enforced - the
 #       algorithm only respects node locality.  This is the same behaviour as
-#       with `batch=1`.
+#       with `size=1`.
+#
 #
 class ContinuousColo(Continuous):
 
@@ -111,13 +158,13 @@ class ContinuousColo(Continuous):
         # a 'bag' entry will look like this:
         #
         #   {
-        #      'size': 128,    # number of units to expect
-        #      'uids': [...]}, # ids    of units to be scheduled
+        #      'size': 128,    # number of tasks to expect
+        #      'uids': [...]}, # ids    of tasks to be scheduled
         #   }
 
         self._lock      = ru.RLock()   # lock on the bags
-        self._units     = dict()       # unit registry (we use uids otherwise)
-        self._unordered = list()       # IDs of units which are not colocated
+        self._tasks     = dict()       # task registry (we use uids otherwise)
+        self._unordered = list()       # IDs of tasks which are not colocated
         self._bags      = dict()       # nothing has run, yet
 
         self._bag_init  = {'size' : 0,
@@ -125,38 +172,52 @@ class ContinuousColo(Continuous):
 
 
     # --------------------------------------------------------------------------
+    #
+    def _get_tags(self, descr):
+
+        tags = descr.get('tags', {}).get('colocate')
+        if not tags:
+            return {}
+
+        node  = tags.get('node')
+        size = tags.get('size')
+
+        if not node : node  = None
+        if not size: size = 0
+
+        return node, size
+
+
+    # --------------------------------------------------------------------------
     # overload the main method from the base class
-    def _schedule_units(self, units):
+    def _schedule_units(self, tasks):
 
-        if not isinstance(units, list):
-            units = [units]
+        tasks = ru.as_list(tasks)
 
-        self.advance(units, rps.AGENT_SCHEDULING, publish=True, push=False)
+        self.advance(tasks, rps.AGENT_SCHEDULING, publish=True, push=False)
 
         with self._lock:
 
             # cache ID int to avoid repeated parsing
-            for unit in units:
+            for task in tasks:
 
-                uid      = unit['uid']
-                descr    = unit['description']
-                colo_tag = descr.get('tags', {}).get('colocate')
+                uid   = task['uid']
+                descr = task['description']
 
-                # units w/o order info are handled as usual, and we don't keep
-                # any infos around
-                if not colo_tag:
-                  # self._log.debug('no tags for %s', uid)
-                    self._unordered.append(unit)
+                node, size = self._get_tags(descr)
+
+                # tasks w/o node spec and single batched handled as usual,
+                # and we don't keep any infos around
+                if not node and not size:
+                  # self._log.debug('no colo tags for %s', uid)
+                    self._unordered.append(task)
                     continue
 
-                # this uniit wants to be ordered - keep it in our registry
-                assert(uid not in self._units), 'duplicated unit %s' % uid
-                self._units[uid] = unit
+                # this task wants to be ordered - keep it in our registry
+                assert(uid not in self._tasks), 'duplicated task %s' % uid
+                self._tasks[uid] = task
 
-                bag   = colo_tag['bag']
-                size  = colo_tag['size']
-
-              # self._log.debug('tags %s: %s : %d', uid, bag, size)
+              # self._log.debug('colo %s: %s : %d', uid, bag, size)
 
                 # initiate bag if needed
                 if bag not in self._bags:
@@ -167,10 +228,10 @@ class ContinuousColo(Continuous):
                     assert(size == self._bags[bag]['size']), \
                            'inconsistent bag size'
 
-                # add unit to order
+                # add task to order
                 self._bags[bag]['uids'].append(uid)
 
-        # try to schedule known units
+        # try to schedule known tasks
         self._try_schedule()
 
         return True
@@ -179,36 +240,36 @@ class ContinuousColo(Continuous):
     # --------------------------------------------------------------------------
     def _try_schedule(self):
         '''
-        Schedule all units in self._unordered.  Then for all name spaces,
-        check if their `current` order has units to schedule.  If not and
-        we see `size` units are `done`, consider the order completed and go
+        Schedule all tasks in self._unordered.  Then for all name spaces,
+        check if their `current` order has tasks to schedule.  If not and
+        we see `size` tasks are `done`, consider the order completed and go
         to the next one.  Break once we find a BoT which is not completely
-        schedulable, either because we did not yet get all its units, or
-        because we run out of resources to place those units.
+        schedulable, either because we did not yet get all its tasks, or
+        because we run out of resources to place those tasks.
         '''
 
         self._log.debug('try schedule')
-        scheduled = list()  # list of scheduled units
+        scheduled = list()  # list of scheduled tasks
 
         # FIXME: this lock is very aggressive, it should not be held over
         #        the scheduling algorithm's activity.
-        # first schedule unordered units (
+        # first schedule unordered tasks (
         with self._lock:
 
             keep = list()
-            for unit in self._unordered:
+            for task in self._unordered:
 
-                # attempt to schedule this unit (use continuous algorithm)
-                if Continuous._try_allocation(self, unit):
+                # attempt to schedule this task (use continuous algorithm)
+                if Continuous._try_allocation(self, task):
 
                     # success - keep it and try the next one
-                    scheduled.append(unit)
+                    scheduled.append(task)
 
                 else:
-                    # failure - keep unit around
-                    keep.append(unit)
+                    # failure - keep task around
+                    keep.append(task)
 
-            # keep only unscheduleed units
+            # keep only unscheduled tasks
             self._unordered = keep
 
 
@@ -232,11 +293,11 @@ class ContinuousColo(Continuous):
                     if self._try_schedule_bag(bag):
 
                         self._log.debug('try bag %s (placed)', bag)
-                        # scheduling works - push units out and erase all traces
+                        # scheduling works - push tasks out and erase all traces
                         # of the bag (delayed until after iteration)
                         for uid in self._bags[bag]['uids']:
 
-                            scheduled.append(self._units[uid])
+                            scheduled.append(self._tasks[uid])
 
                         to_delete.append(bag)
 
@@ -246,7 +307,7 @@ class ContinuousColo(Continuous):
                 del(self._bags[bag])
 
 
-        # advance all scheduled units and push them out
+        # advance all scheduled tasks and push them out
         if scheduled:
             self.advance(scheduled, rps.AGENT_EXECUTING_PENDING,
                          publish=True, push=True)
@@ -259,16 +320,16 @@ class ContinuousColo(Continuous):
     #
     def _try_schedule_bag(self, bag):
         '''
-        This methods assembles the requiremets of all tasks in a bag into
-        a single pseudo-unit.  We ask the cont scheduler to schedule that
-        pseudo-unit for us.  If that works, we disassemble the resulting
-        resource slots and assign them to the bag's units again, and declare
+        This methods assembles the requirements of all tasks in a bag into
+        a single pseudo-task.  We ask the cont scheduler to schedule that
+        pseudo-task for us.  If that works, we disassemble the resulting
+        resource slots and assign them to the bag's tasks again, and declare
         success.
         '''
 
         self._log.debug('try schedule bag %s ', bag)
 
-        tasks  = [self._units[uid] for uid in self._bags[bag]['uids']]
+        tasks  = [self._tasks[uid] for uid in self._bags[bag]['uids']]
         pseudo = copy.deepcopy(tasks[0])
 
         pseudo['uid'] = 'pseudo.'
@@ -298,10 +359,10 @@ class ContinuousColo(Continuous):
 
         if not Continuous._try_allocation(self, pseudo):
 
-            # cannot scshedule this pseudo task right now, bag has to wait
+            # cannot schedule this pseudo task right now, bag has to wait
             return False
 
-        # we got an allocation for the pseudo task, not dissassemble the slots
+        # we got an allocation for the pseudo task, not disassemble the slots
         # and assign back to the individual tasks in the bag
         slots = copy.deepcopy(pseudo['slots'])
         cpus  = copy.deepcopy(pseudo['slots']['nodes'][0]['core_map'])
@@ -336,7 +397,7 @@ class ContinuousColo(Continuous):
     #
     def schedule_cb(self, topic, msg):
         '''
-        This cb gets triggered after some units got unscheduled, ie. their
+        This cb gets triggered after some tasks got unscheduled, i.e., their
         resources have been freed.  We attempt a new round of scheduling at that
         point.
         '''

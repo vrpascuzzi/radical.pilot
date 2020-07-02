@@ -31,7 +31,15 @@ from ... import constants as rpc
 # where one stage needs to be completed before units from the next stage can be
 # considered for scheduling.
 #
-# FIXME: - failed units cannot yet be recognized
+# NOTE: tasks exit codes don't influence the scheduling algorithm: subsequent
+#       task batches will be scheduled even if the first batch completed with
+#       a non=zero exit code.
+#
+#       If `size` is not specified, it defaults to `1` and tasks are run
+#       individually in the given order.
+#
+#       If an integer is specified instead of a dict, it is interpreted a
+#       `order` - `ns` is in this case set to `default`, and `size` to `1`.
 #
 class ContinuousOrdered(Continuous):
 
