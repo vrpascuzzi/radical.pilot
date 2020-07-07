@@ -20,25 +20,29 @@ from ... import compute_unit_description as rpcud
 #   - BoTs can be ordered, i.e., tasks from a BoT with order `n` are not started
 #     before all tasks from all BoTs of order `m` with `m < n`.
 #
-#   - Task concurrency: tasks in a BoT can be configured to get started at
+#   - concurrent: tasks in a BoT can be configured to get started at
 #     the same time (*)
 #
-#   - Task co-location: tasks in a BoT can be configured to all land on the same
-#     set of (**) compute nodes.
+#   - co-locate: tasks in a BoT can be configured to land on the same
+#     set of compute nodes (**)
+#
+#   - de-locate: tasks in a BoT can be configured to land on a different
+#     set of compute nodes (**)
 #
 # To make use of these facilities, tasks will need to be tagged to belong to
 # a certain BoT.  Since the RP agent will receive tasks in a continuous stream,
 # the tag information will also have to include the size of the BoT, so that the
 # scheduler can judge is a bag is complete.  The tag can further include flags
-# to trigger concurrency and/or co-locality:
+# to trigger concurrency and/or locality constraints:
 #
 #    tags = {
 #        'bot' : {
-#            'id'         : 'foo',  # mandatory
-#            'size'       : 4,      # optional, default: 1
-#            'order'      : 2,      # optional, default: None
-#            'concurrency': False,  # optional, default: False
-#            'co-location': False   # optional, default: False
+#            'id'        : 'foo',  # mandatory
+#            'size'      : 4,      # optional, default: 1
+#            'order'     : 2,      # optional, default: None
+#            'concurrent': False,  # optional, default: False
+#            'co-locate' : False   # optional, default: False
+#            'de-locate' : False   # optional, default: False
 #        }
 #    }
 #
@@ -49,7 +53,7 @@ from ... import compute_unit_description as rpcud
 # Note that a BoT ID can be reused.  For example, 4 tasks can share a BoT ID
 # `bot1` of size `2`.  The scheduler will collect 2 tasks and run them.  If it
 # encounters the same BoT ID again, it will again collect 2 tasks.  If
-# co-locality is enabled, then the second batch will run on the same node as the
+# `co-locate` is enabled, then the second batch will run on the same node as the
 # first batch.  If the BoT has an order defined, then the first batch will need
 # to see at least one BoT for each lower order completed before the BoT is
 # eligible.  If a subsequent batch is received for the same BoT ID, then at
@@ -60,8 +64,8 @@ from ... import compute_unit_description as rpcud
 #      RP agent and HPC system configuration, RP though guarantees that the BoT
 #      becomes eligible for execution at the exact same time.
 #
-# (**) 'same set of compute nodes': the current implementation can only handle
-#      co-location for tasks of size up to a single node.
+# (**) 'set of compute nodes': the current implementation can only handle
+#      `co-locate` and `de-locate` for tasks of size up to a single node.
 #
 #
 # Examples:
@@ -75,10 +79,10 @@ from ... import compute_unit_description as rpcud
 #   eligible for execution once all 4 tasks arrive in the scheduler.
 #
 #
-#   task.1  id=bot1  size=2  order=None  concurrency=True  co-location=True
-#   task.2  id=bot1  size=2  order=None  concurrency=True  co-location=True
-#   task.3  id=bot2  size=2  order=None  concurrency=True  co-location=True
-#   task.4  id=bot2  size=2  order=None  concurrency=True  co-location=True
+#   task.1  id=bot1  size=2  order=None  concurrent=True  co-locate=True
+#   task.2  id=bot1  size=2  order=None  concurrent=True  co-locate=True
+#   task.3  id=bot2  size=2  order=None  concurrent=True  co-locate=True
+#   task.4  id=bot2  size=2  order=None  concurrent=True  co-locate=True
 #
 #   tasks 1 and 2 will run concurrently on the same node, tasks 3 and 4 will
 #   also run concurrently on one node (possibly at a different time).  The node
@@ -119,6 +123,15 @@ from ... import compute_unit_description as rpcud
 #   task.4  size=4
 #
 #   tasks 1 to 4 will run concurrently, but possibly on different nodes.
+#
+#
+#   task.1  size=4 de-locate=True
+#   task.2  size=4 de-locate=True
+#   task.3  size=4 de-locate=True
+#   task.4  size=4 de-locate=True
+#
+#   tasks 1 to 4 will run concurrently, but guaranteed on different nodes
+#   (needs 4 nodes!)
 #
 #
 # The dominant use case for this scheduler is the execution of coupled
