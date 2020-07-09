@@ -26,6 +26,7 @@ RUN apt-get update && \
         dnsutils \
         gcc \
         git \
+        openmpi-bin \
         iputils-ping \
         python3-dev \
         python3-venv \

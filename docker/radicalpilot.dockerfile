@@ -17,6 +17,7 @@ RUN apt-get update && \
         iputils-ping \
         python3-dev \
         python3-venv \
+        openmpi \
         vim && \
     rm -rf /var/lib/apt/lists/*
 
