@@ -174,12 +174,15 @@ class Master(rpu.Component):
 
     # --------------------------------------------------------------------------
     #
-    def terminate(self):
+    def terminate(self, uids=None):
         '''
         terminate all workers
         '''
 
-        for uid in self._workers:
+        if not uids:
+            uids = self._workers.keys()
+
+        for uid in uids
             self.publish(rpc.CONTROL_PUBSUB, {'cmd': 'worker_register',
                                               'arg': {'uid': uid}})
 

@@ -1,5 +1,13 @@
 
 {
+    "local.debug" : {
+        "project"  : null,
+        "queue"    : null,
+        "schema"   : null,
+        "cores"    : 10,
+        "gpus"     : 2
+    },
+
     "local.localhost" : {
         "project"  : null,
         "queue"    : null,

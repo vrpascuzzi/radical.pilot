@@ -51,7 +51,7 @@ for st,v in _pilot_state_values.items():
 
 
 def _pilot_state_value(s):
-    return _pilot_state_values[s] 
+    return _pilot_state_values[s]
 
 
 def _pilot_state_progress(pid, current, target):
@@ -110,7 +110,7 @@ def _pilot_state_collapse(states):
 
 
 # ------------------------------------------------------------------------------
-# 
+#
 # unit states
 #
 UMGR_SCHEDULING_PENDING      = 'UMGR_SCHEDULING_PENDING'
@@ -162,7 +162,7 @@ for st,v in _unit_state_values.items():
 
 
 def _unit_state_value(s):
-    return _unit_state_values[s] 
+    return _unit_state_values[s]
 
 
 def _unit_state_progress(uid, current, target):
@@ -176,7 +176,7 @@ def _unit_state_progress(uid, current, target):
     the 'current' state, then 'current' is returned, and the list of passed
     states remains empty.  This way, 'passed_states' can be used to invoke
     callbacks for all state transition, where each transition is announced
-    exactly once.  
+    exactly once.
 
     Note that the call will not allow to transition between states of equal
     values, which in particular applies to final states -- those are truly
@@ -274,7 +274,7 @@ if 'RP_ENABLE_OLD_DEFINES' in os.environ:
     STAGING_OUTPUT         = UMGR_STAGING_OUTPUT
 
 _legacy_states = {
-    'New'                        : NEW, 
+    'New'                        : NEW,
     'AllocatingPending'          : UMGR_SCHEDULING_PENDING,
     'Allocating'                 : UMGR_SCHEDULING,
     'PendingInputStaging'        : UMGR_STAGING_INPUT_PENDING,
@@ -287,7 +287,7 @@ _legacy_states = {
     'AgentStagingOutput'         : AGENT_STAGING_OUTPUT,
     'PendingOutputStaging'       : UMGR_STAGING_OUTPUT_PENDING,
     'StagingOutput'              : UMGR_STAGING_OUTPUT,
-    'Done'                       : DONE, 
+    'Done'                       : DONE,
     'Canceled'                   : CANCELED,
     'CANCELED'                   : CANCELED,
     'Failed'                     : FAILED,

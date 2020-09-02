@@ -192,7 +192,7 @@ class ContinuousColo(Continuous):
         if not tags:
             return {}
 
-        node  = tags.get('node')
+        node = tags.get('node')
         size = tags.get('size')
 
         if not node : node  = None
