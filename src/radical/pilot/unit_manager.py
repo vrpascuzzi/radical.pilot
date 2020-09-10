@@ -291,18 +291,22 @@ class UnitManager(rpu.Component):
 
             if state in rps.FINAL:
 
+                # FIXME: track unit assignments: listen to scheduler
+                #        decisions
+
                 self._log.debug('pilot %s is final - pull units', pilot.uid)
+                units = list()
 
-                unit_cursor = self.session._dbs._c.find({
-                    'type'    : 'unit',
-                    'pilot'   : pilot.uid,
-                    'umgr'    : self.uid,
-                    'control' : {'$in' : ['agent_pending', 'agent']}})
-
-                if not unit_cursor.count():
-                    units = list()
-                else:
-                    units = list(unit_cursor)
+              # unit_cursor = self.session._dbs._c.find({
+              #     'type'    : 'unit',
+              #     'pilot'   : pilot.uid,
+              #     'umgr'    : self.uid,
+              #     'control' : {'$in' : ['agent_pending', 'agent']}})
+              #
+              # if not unit_cursor.count():
+              #     units = list()
+              # else:
+              #     units = list(unit_cursor)
 
                 self._log.debug("units pulled: %3d (pilot dead)", len(units))
 
@@ -315,10 +319,10 @@ class UnitManager(rpu.Component):
                 #        units.
                 uids = [unit['uid'] for unit in units]
 
-                self._session._dbs._c.update({'type'  : 'unit',
-                                              'uid'   : {'$in'     : uids}},
-                                             {'$set'  : {'control' : 'umgr'}},
-                                             multi=True)
+              # self._session._dbs._c.update({'type'  : 'unit',
+              #                               'uid'   : {'$in'     : uids}},
+              #                              {'$set'  : {'control' : 'umgr'}},
+              #                              multi=True)
                 to_restart = list()
                 for unit in units:
 
@@ -361,7 +365,9 @@ class UnitManager(rpu.Component):
         # FIXME: we also pull for dead units.  That is not efficient...
         # FIXME: this needs to be converted into a tailed cursor in the update
         #        worker
-        units = self._session._dbs.get_units(umgr_uid=self.uid)
+        # FIXME: listen to ZMQ events
+        # units = self._session._dbs.get_units(umgr_uid=self.uid)
+        units = list()
 
         for unit in units:
             if not self._update_unit(unit, publish=True, advance=False):
@@ -384,14 +390,16 @@ class UnitManager(rpu.Component):
         #        to use 'find'.  To avoid finding the same units over and over
         #        again, we update the 'control' field *before* running the next
         #        find -- so we do it right here.
-        unit_cursor = self.session._dbs._c.find({'type'    : 'unit',
-                                                 'umgr'    : self.uid,
-                                                 'control' : 'umgr_pending'})
-
-        if not unit_cursor.count():
-            # no units whatsoever...
-          # self._log.info("units pulled:    0")
-            return True  # this is not an error
+        # FIXME: listen to ZMQ events
+      # unit_cursor = self.session._dbs._c.find({'type'    : 'unit',
+      #                                          'umgr'    : self.uid,
+      #                                          'control' : 'umgr_pending'})
+      #
+      # if not unit_cursor.count():
+      #     # no units whatsoever...
+      #   # self._log.info("units pulled:    0")
+      #     return True  # this is not an error
+        return True
 
         # update the units to avoid pulling them again next time.
         units = list(unit_cursor)
@@ -841,8 +849,9 @@ class UnitManager(rpu.Component):
             self._rec_id += 1
 
         # insert units into the database, as a bulk.
+        # FIXME: send to ZMQ channel
         unit_docs = [u.as_dict() for u in units]
-        self._session._dbs.insert_units(unit_docs)
+      # self._session._dbs.insert_units(unit_docs)
 
         # Only after the insert can we hand the units over to the next
         # components (ie. advance state).
@@ -1071,7 +1080,8 @@ class UnitManager(rpu.Component):
                                                    'umgr' : self.uid}})
 
         # we also inform all pilots about the cancelation request
-        self._session._dbs.pilot_command(cmd='cancel_units', arg={'uids':uids})
+        # FIXME: use ZMQ channel
+      # self._session._dbs.pilot_command(cmd='cancel_units', arg={'uids':uids})
 
         # In the default case of calling 'advance' above, we just set the state,
         # so we *know* units are canceled.  But we nevertheless wait until that

@@ -256,7 +256,8 @@ class PilotManager(rpu.Component):
             return False
 
         # send heartbeat
-        self._session._dbs.pilot_command('heartbeat', {'pmgr': self._uid})
+        # FIXME: use ZMQ channel
+      # self._session._dbs.pilot_command('heartbeat', {'pmgr': self._uid})
 
         return True
 
@@ -276,8 +277,10 @@ class PilotManager(rpu.Component):
         # FIXME: this needs to be converted into a tailed cursor in the update
         #        worker
         # FIXME: this is a big and frequently invoked lock
-        pilot_dicts = self._session._dbs.get_pilots(pmgr_uid=self.uid)
+        # FIXME: replace with ZMQ event updates
+        return True
 
+        pilot_dicts = self._session._dbs.get_pilots(pmgr_uid=self.uid)
 
         for pilot_dict in pilot_dicts:
             self._log.debug('state pulled: %s: %s', pilot_dict['uid'],
@@ -591,7 +594,8 @@ class PilotManager(rpu.Component):
             self._rec_id += 1
 
         # insert pilots into the database, as a bulk.
-        self._session._dbs.insert_pilots(pilot_docs)
+        # FIXME: save to file
+      # self._session._dbs.insert_pilots(pilot_docs)
 
         # Only after the insert can we hand the pilots over to the next
         # components (ie. advance state).
@@ -792,7 +796,8 @@ class PilotManager(rpu.Component):
         # send the cancelation request to the pilots
         # FIXME: the cancellation request should not go directly to the DB, but
         #        through the DB abstraction layer...
-        self._session._dbs.pilot_command('cancel_pilot', [], uids)
+        # FIXME: use ZMQ channel
+      # self._session._dbs.pilot_command('cancel_pilot', [], uids)
 
         # inform pmgr.launcher - it will force-kill the pilot after some delay
         self.publish(rpc.CONTROL_PUBSUB, {'cmd' : 'cancel_pilots',

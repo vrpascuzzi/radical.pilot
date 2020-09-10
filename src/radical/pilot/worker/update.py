@@ -41,13 +41,13 @@ class Update(rpu.Worker):
     def initialize(self):
 
         self._sid        = self._cfg['sid']
-        self._dburl      = self._cfg['dburl']
-
-        # TODO: get db handle from a connected session
-        _, db, _, _, _   = ru.mongodb_connect(self._dburl)
-        self._mongo_db   = db
-        self._coll       = self._mongo_db[self._sid]
-        self._bulk       = self._coll.initialize_ordered_bulk_op()
+      # self._dburl      = self._cfg['dburl']
+      #
+      # # TODO: get db handle from a connected session
+      # _, db, _, _, _   = ru.mongodb_connect(self._dburl)
+      # self._mongo_db   = db
+      # self._coll       = self._mongo_db[self._sid]
+      # self._bulk       = self._coll.initialize_ordered_bulk_op()
         self._last       = time.time()        # time of last bulk push
         self._uids       = list()             # list of collected uids
         self._lock       = ru.Lock()          # protect _bulk
@@ -70,6 +70,9 @@ class Update(rpu.Worker):
     # --------------------------------------------------------------------------
     #
     def _timed_bulk_execute(self, flush=False):
+
+        # FIXME: ...
+        return True
 
         # is there anything to execute?
         if not self._uids:
@@ -170,6 +173,9 @@ class Update(rpu.Worker):
         of the given 'thing' are used, all other fields are ignored.  If 'state'
         does not exist, an exception is raised.
         '''
+
+        # FIXME: ...
+        return
 
         try:
             cmd    = msg['cmd']

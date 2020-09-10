@@ -880,13 +880,13 @@ class Default(PMGRLaunchingComponent):
 
     # --------------------------------------------------------------------------
     #
-    def _prepare_pridge(self, resource, rcfg, pilot, expand):
+    def _prepare_bridge(self, resource, rcfg, pilot, expand):
 
         pid = pilot["uid"]
         sid = self._session.uid
 
-        ret = {'fd': list,
-               'js': None}
+        ret = {'js': None,
+               'ft': list()}
 
         # some default values are determined at runtime
         default_virtenv = '%%(resource_sandbox)s/ve.%s.%s' % \

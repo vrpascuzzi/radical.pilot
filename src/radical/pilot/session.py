@@ -78,7 +78,7 @@ class Session(rs.Session):
             name = cfg
             cfg  = None
 
-        self._dbs     = None
+      # self._dbs     = None
         self._closed  = False
         self._primary = _primary
 
@@ -160,37 +160,37 @@ class Session(rs.Session):
         # create db connection - need a dburl to connect to
         if not dburl: dburl = self._cfg.dburl
         if not dburl: dburl = self._cfg.default_dburl
-        if not dburl: raise RuntimeError("no db URL (set RADICAL_PILOT_DBURL)")
+      # if not dburl: raise RuntimeError("no db URL (set RADICAL_PILOT_DBURL)")
 
         self._cfg.dburl = dburl
 
-        dburl_no_passwd = ru.Url(dburl)
-        if dburl_no_passwd.get_password():
-            dburl_no_passwd.set_password('****')
-
-        self._rep.info ('<<database   : ')  
-        self._rep.plain('[%s]'    % dburl_no_passwd)
-        self._log.info('dburl %s' % dburl_no_passwd)
-
-        # create/connect database handle on primary sessions
-        try:
-            self._dbs = DBSession(sid=self.uid, dburl=dburl,
-                                  cfg=self._cfg, log=self._log)
-
-            py_version_detail = sys.version.replace("\n", " ")
-            from . import version_detail as rp_version_detail
-
-            self.inject_metadata({'radical_stack':
-                                         {'rp': rp_version_detail,
-                                          'rs': rs.version_detail,
-                                          'ru': ru.version_detail,
-                                          'py': py_version_detail}})
-        except Exception as e:
-            self._rep.error(">>err\n")
-            self._log.exception('session create failed [%s]' %
-                    dburl_no_passwd)
-            raise RuntimeError ('session create failed [%s]' %
-                    dburl_no_passwd) from e
+      # dburl_no_passwd = ru.Url(dburl)
+      # if dburl_no_passwd.get_password():
+      #     dburl_no_passwd.set_password('****')
+      #
+      # self._rep.info ('<<database   : ')
+      # self._rep.plain('[%s]'    % dburl_no_passwd)
+      # self._log.info('dburl %s' % dburl_no_passwd)
+      #
+      # # create/connect database handle on primary sessions
+      # try:
+      #     self._dbs = DBSession(sid=self.uid, dburl=dburl,
+      #                           cfg=self._cfg, log=self._log)
+      #
+      #     py_version_detail = sys.version.replace("\n", " ")
+      #     from . import version_detail as rp_version_detail
+      #
+      #     self.inject_metadata({'radical_stack':
+      #                                  {'rp': rp_version_detail,
+      #                                   'rs': rs.version_detail,
+      #                                   'ru': ru.version_detail,
+      #                                   'py': py_version_detail}})
+      # except Exception as e:
+      #     self._rep.error(">>err\n")
+      #     self._log.exception('session create failed [%s]' %
+      #             dburl_no_passwd)
+      #     raise RuntimeError ('session create failed [%s]' %
+      #             dburl_no_passwd) from e
 
         # primary sessions have a component manager which also manages
         # heartbeat.  'self._cmgr.close()` should be called during termination
@@ -275,9 +275,9 @@ class Session(rs.Session):
         if self._cmgr:
             self._cmgr.close()
 
-        if self._dbs:
-            self._log.debug("session %s closes db (%s)", self._uid, cleanup)
-            self._dbs.close(delete=cleanup)
+      # if self._dbs:
+      #     self._log.debug("session %s closes db (%s)", self._uid, cleanup)
+      #     self._dbs.close(delete=cleanup)
 
         self._log.debug("session %s closed (delete=%s)", self._uid, cleanup)
         self._prof.prof("session_stop", uid=self._uid)
@@ -356,14 +356,14 @@ class Session(rs.Session):
         return self._cfg.dburl
 
 
-    # --------------------------------------------------------------------------
-    #
-    def get_db(self):
-
-        if self._dbs: return self._dbs.get_db()
-        else        : return None
-
-
+  # # --------------------------------------------------------------------------
+  # #
+  # def get_db(self):
+  #
+  #     if self._dbs: return self._dbs.get_db()
+  #     else        : return None
+  #
+  #
     # --------------------------------------------------------------------------
     #
     @property
@@ -386,47 +386,47 @@ class Session(rs.Session):
         return self._cmgr
 
 
-    # --------------------------------------------------------------------------
-    #
-    @property
-    def created(self):
-        '''Returns the UTC date and time the session was created.
-        '''
-        if self._dbs: return self._dbs.created
-        else        : return None
-
-
-    # --------------------------------------------------------------------------
-    #
-    @property
-    def connected(self):
-        '''
-        Return time when the session connected to the DB
-        '''
-
-        if self._dbs: return self._dbs.connected
-        else        : return None
-
-
-    # --------------------------------------------------------------------------
-    #
-    @property
-    def is_connected(self):
-
-        return self._dbs.is_connected
-
-
-    # --------------------------------------------------------------------------
-    #
-    @property
-    def closed(self):
-        '''
-        Returns the time of closing
-        '''
-        if self._dbs: return self._dbs.closed
-        else        : return None
-
-
+  # # --------------------------------------------------------------------------
+  # #
+  # @property
+  # def created(self):
+  #     '''Returns the UTC date and time the session was created.
+  #     '''
+  #     if self._dbs: return self._dbs.created
+  #     else        : return None
+  #
+  #
+  # # --------------------------------------------------------------------------
+  # #
+  # @property
+  # def connected(self):
+  #     '''
+  #     Return time when the session connected to the DB
+  #     '''
+  #
+  #     if self._dbs: return self._dbs.connected
+  #     else        : return None
+  #
+  #
+  # # --------------------------------------------------------------------------
+  # #
+  # @property
+  # def is_connected(self):
+  #
+  #     return self._dbs.is_connected
+  #
+  #
+  # # --------------------------------------------------------------------------
+  # #
+  # @property
+  # def closed(self):
+  #     '''
+  #     Returns the time of closing
+  #     '''
+  #     if self._dbs: return self._dbs.closed
+  #     else        : return None
+  #
+  #
     # --------------------------------------------------------------------------
     #
     def _get_logger(self, name, level=None):
@@ -476,17 +476,18 @@ class Session(rs.Session):
         if not isinstance(metadata, dict):
             raise Exception("Session metadata should be a dict!")
 
-        if self._dbs and self._dbs._c:
-            self._dbs._c.update({'type'  : 'session',
-                                 "uid"   : self.uid},
-                                {"$push" : {"metadata": metadata}})
+        # FIXME: store to disk
+      # if self._dbs and self._dbs._c:
+      #     self._dbs._c.update({'type'  : 'session',
+      #                          "uid"   : self.uid},
+      #                         {"$push" : {"metadata": metadata}})
 
 
     # --------------------------------------------------------------------------
     #
     def _register_pmgr(self, pmgr):
 
-        self._dbs.insert_pmgr(pmgr.as_dict())
+      # self._dbs.insert_pmgr(pmgr.as_dict())
         self._pmgrs[pmgr.uid] = pmgr
 
 
@@ -536,7 +537,7 @@ class Session(rs.Session):
     #
     def _register_umgr(self, umgr):
 
-        self._dbs.insert_umgr(umgr.as_dict())
+      # self._dbs.insert_umgr(umgr.as_dict())
         self._umgrs[umgr.uid] = umgr
 
 
