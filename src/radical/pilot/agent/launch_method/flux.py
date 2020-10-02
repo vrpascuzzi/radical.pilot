@@ -41,15 +41,19 @@ class Flux(LaunchMethod):
         except:
             raise Exception("Couldn't import flux")
 
-      # cmd  = 'flux start -o,-v,-S,log-filename=out'.split()
-      # proc = sp.Popen(cmd, stdin=sp.PIPE, stdout=sp.PIPE, stderr=sp.STDOUT)
-      # proc.stdin.write(ru.as_bytes('flux getattr local-uri\necho "OK"\n'))
+        with open('flux_launcher.sh', 'w') as fout:
+            fout.write('''#/bin/sh
+export PMIX_MCA_gds='^ds12,ds21'
+echo "flux env; echo OK; while true; do echo ok; sleep 1; done" | \\
+jsrun -a 1 -c ALL_CPUS -g ALL_GPUS -n %d --bind none --smpiargs '-disable_gpu_hooks' \\
+flux start -o,-v,-S,log-filename=flux.log
+''' % len(rm.node_list))
 
-        check = 'flux env; echo "OK"; while true; do echo "ok"; sleep 1; done'
-        start = 'flux start -o,-v,-S,log-filename=out'
-        cmd   = '/bin/bash -c "echo \\\"%s\\\" | %s"' % (check, start)
-        proc  = sp.Popen(cmd, shell=True,
-                          stdin=sp.PIPE, stdout=sp.PIPE, stderr=sp.STDOUT)
+        cmd  = '/bin/sh ./flux_launcher.sh'
+        proc = sp.Popen(cmd, shell=True,
+                        stdin=sp.PIPE, stdout=sp.PIPE, stderr=sp.STDOUT)
+
+        logger.debug('=== %s', cmd)
 
         flux_env = dict()
         while True:
@@ -69,38 +73,31 @@ class Flux(LaunchMethod):
         assert('FLUX_URI' in flux_env)
 
         # TODO check perf implications
-        flux_url             = ru.Url(flux_env['FLUX_URI'])
-        flux_url.host        = ru.get_hostname()
-        flux_url.scheme      = 'ssh'
+        flux_url             = flux_env['FLUX_URI']
+      # flux_url             = ru.Url(flux_url)
+      # flux_url.host        = ru.get_hostname()
+      # flux_url.scheme      = 'ssh'
         flux_env['FLUX_URI'] = str(flux_url)
 
         profiler.prof('flux_started')
 
         # ----------------------------------------------------------------------
-        def _watch_flux(flux_env):
+        def _watch_flux(proc):
 
-            logger.info('=== starting flux watcher')
+            try:
 
-            for k,v in flux_env.items():
-                os.environ[k] = v
+                while True:
 
-            ret = None
-            while not ret:
+                    line = ru.as_string(proc.stdout.readline().strip())
+                    logger.debug('=== %s', line)
 
-                out, err, ret = ru.sh_callout('flux ping -c 1 all')
-                logger.debug('=== flux watcher out: %s', out)
-
-                if ret:
-                    logger.error('=== flux watcher err: %s', err)
-                    break
-
-                time.sleep(0.1)
-
-            logger.info('flux stopped?')
-            # FIXME: trigger termination
+            except Exception as e:
+                logger.exception('ERROR: flux stopped?')
+                # FIXME: trigger termination
+                raise
         # ----------------------------------------------------------------------
 
-        flux_watcher = mt.Thread(target=_watch_flux, args=[flux_env])
+        flux_watcher = mt.Thread(target=_watch_flux, args=[proc])
         flux_watcher.daemon = True
         flux_watcher.start()
 

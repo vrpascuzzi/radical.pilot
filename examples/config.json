@@ -188,6 +188,14 @@
         "gpus"     : 6
     },
 
+    "ornl.summit_flux" : {
+        "project"  : "med110",
+        "queue"    : "debug",
+        "schema"   : "local",
+        "cores"    : 168,
+        "gpus"     : 6
+    },
+
     "ornl.rhea_aprun"   : {
         "project"  : "BIP149",
         "queue"    : "batch",

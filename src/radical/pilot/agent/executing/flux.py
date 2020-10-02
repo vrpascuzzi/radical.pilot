@@ -3,6 +3,7 @@ __copyright__ = 'Copyright 2013-2020, http://radical.rutgers.edu'
 __license__   = 'MIT'
 
 
+import os
 import time
 import queue
 import threading as mt
@@ -125,10 +126,14 @@ class Flux(AgentExecutingComponent) :
 
         try:
             # thread local initialization
+
+            flux_env = self._cfg['rm_info']['lm_info']['flux_env']
+            for k,v in flux_env.items():
+                os.environ[k] = v
+
             import flux
 
-            flux_url    = self._cfg['rm_info']['lm_info']\
-                                              ['flux_env']['FLUX_URI']
+            flux_url    = flux_env['FLUX_URI']
             flux_handle = flux.Flux(url=flux_url)
             flux_handle.event_subscribe('job-state')
 

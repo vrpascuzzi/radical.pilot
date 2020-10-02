@@ -3,6 +3,7 @@ __copyright__ = "Copyright 2017, http://radical.rutgers.edu"
 __license__   = "MIT"
 
 
+import os
 import json
 
 import radical.utils        as ru
@@ -35,9 +36,13 @@ class Flux(AgentSchedulingComponent):
     #
     def _configure(self):
 
+        flux_env = self._cfg['rm_info']['lm_info']['flux_env']
+        for k,v in flux_env.items():
+            os.environ[k] = v
+
         import flux
 
-        flux_url   = self._cfg['rm_info']['lm_info']['flux_env']['FLUX_URI']
+        flux_url   = flux_env['FLUX_URI']
         self._flux = flux.Flux(url=flux_url)
 
         # don't advance tasks via the component's `advance()`, but push them
