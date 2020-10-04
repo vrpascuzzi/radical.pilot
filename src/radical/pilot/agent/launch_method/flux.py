@@ -44,7 +44,7 @@ class Flux(LaunchMethod):
         with open('flux_launcher.sh', 'w') as fout:
             fout.write('''#/bin/sh
 export PMIX_MCA_gds='^ds12,ds21'
-echo "flux env; echo OK; while true; do echo ok; sleep 1; done" | \\
+echo "flux env; echo "hostname $(hostname -f)" ; echo OK; while true; do echo ok; sleep 1; done" | \\
 jsrun -a 1 -c ALL_CPUS -g ALL_GPUS -n %d --bind none --smpiargs '-disable_gpu_hooks' \\
 flux start -o,-v,-S,log-filename=flux.log
 ''' % len(rm.node_list))
@@ -55,6 +55,7 @@ flux start -o,-v,-S,log-filename=flux.log
 
         logger.debug('=== %s', cmd)
 
+        hostname = None
         flux_env = dict()
         while True:
 
@@ -66,20 +67,28 @@ flux start -o,-v,-S,log-filename=flux.log
                 flux_env[k] = v.strip('"')
                 logger.debug('%s = %s' % (k, v.strip('"')))
 
+            elif line.startswith('hostname '):
+                hostname = line.split()[1]
+                logger.debug('hostname = %s' % hostname)
+
             elif line == 'OK':
                 break
 
 
         assert('FLUX_URI' in flux_env)
+        assert(hostname)
 
         # TODO check perf implications
-        flux_url             = flux_env['FLUX_URI']
-      # flux_url             = ru.Url(flux_url)
-      # flux_url.host        = ru.get_hostname()
-      # flux_url.scheme      = 'ssh'
-        flux_env['FLUX_URI'] = str(flux_url)
+        flux_uri             = flux_env['FLUX_URI']
+        flux_uri             = ru.Url(flux_uri)
+        flux_uri.host        = get_hostname()
+        flux_uri.scheme      = 'ssh'
+        flux_env['FLUX_URI'] = str(flux_uri)
+
+        self._log.debug('=== flux uri: %s', flux_uri)
 
         profiler.prof('flux_started')
+
 
         # ----------------------------------------------------------------------
         def _watch_flux(proc):
