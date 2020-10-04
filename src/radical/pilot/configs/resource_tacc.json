@@ -28,13 +28,58 @@
                                         "module unload intel",
                                         "module unload impi",
                                         "module load   intel",
-                                        "module load   python3/3.7.0"
+                                        "module load   python3/3.7.0",
+                                        "ulimit -u 16384"
                                         ],
         "default_remote_workdir"      : "$SCRATCH",
         "valid_roots"                 : ["$SCRATCH", "$WORK"],
         "rp_version"                  : "local",
         "virtenv_mode"                : "create",
         "python_dist"                 : "default",
+        "export_to_cu"                : ["LMOD_CMD",
+                                         "LMOD_SYSTEM_DEFAULT_MODULES",
+                                         "LD_LIBRARY_PATH"],
+        "cu_pre_exec"                 : []
+    },
+
+    "frontera_wf0": {
+        "description"                 : "",
+        "notes"                       : "",
+        "schemas"                     : ["ssh", "local"],
+        "mandatory_args"              : ["project"],
+        "ssh"                         :
+        {
+            "job_manager_endpoint"    : "slurm+ssh://frontera.tacc.utexas.edu/",
+            "filesystem_endpoint"     : "sftp://frontera.tacc.utexas.edu/"
+        },
+        "local"                       :
+        {
+            "job_manager_endpoint"    : "slurm://frontera.tacc.utexas.edu/",
+            "filesystem_endpoint"     : "file://frontera.tacc.utexas.edu/"
+        },
+        "default_queue"               : "normal",
+        "resource_manager"            : "SLURM",
+        "cores_per_node"              : 56,
+        "agent_config"                : "default",
+        "agent_scheduler"             : "CONTINUOUS",
+        "agent_spawner"               : "POPEN",
+        "agent_launch_method"         : "SRUN",
+        "task_launch_method"          : "SRUN",
+        "mpi_launch_method"           : "SRUN",
+        "pre_bootstrap_0"             :["module load TACC",
+                                        "module unload intel",
+                                        "module unload impi",
+                                        "module load   intel",
+                                        "module load   python3/3.7.0",
+                                        ". /home1/07305/rpilot/.miniconda3/etc/profile.d/conda.sh",
+                                        "ulimit -u 16384"
+                                        ],
+        "default_remote_workdir"      :  "/scratch1/07305/rpilot",
+        "valid_roots"                 : ["$SCRATCH", "$WORK"],
+        "rp_version"                  : "installed",
+        "virtenv"                     : "/scratch1/07305/rpilot/radical.pilot.sandbox/ve_wf0_ad",
+        "virtenv_mode"                : "use",
+        "python_dist"                 : "anaconda",
         "export_to_cu"                : ["LMOD_CMD",
                                          "LMOD_SYSTEM_DEFAULT_MODULES",
                                          "LD_LIBRARY_PATH"],
@@ -137,19 +182,19 @@
             "job_manager_endpoint"    : "slurm+ssh://longhorn.tacc.utexas.edu/",
             "filesystem_endpoint"     : "sftp://longhorn.tacc.utexas.edu/"
         },
-        "default_queue"               : "development",
+        "default_queue"               : "normal",
         "resource_manager"            : "SLURM",
         "cores_per_node"              : 40,
         "gpus_per_node"               : 4,
         "agent_scheduler"             : "CONTINUOUS",
         "agent_spawner"               : "POPEN",
         "agent_launch_method"         : "SRUN",
-        "task_launch_method"          : "MPIRUN",
-        "mpi_launch_method"           : "MPIRUN",
-        "pre_bootstrap_0"             : ["module load gcc/7.3.0",
-                                         "module load openmpi/3.1.2",
-                                         "module --expert load xl",
-                                         "module load python3/3.8.1"
+        "task_launch_method"          : "SRUN",
+        "mpi_launch_method"           : "SRUN",
+        "pre_bootstrap_0"             :["module load TACC",
+                                        "module unload gcc",
+                                        "module load gcc/7.3.0",
+                                        "module load python3/3.8.1"
                                         ],
         "default_remote_workdir"      : "$SCRATCH",
         "valid_roots"                 : ["$SCRATCH", "$WORK"],
@@ -158,7 +203,8 @@
         "python_dist"                 : "default",
         "export_to_cu"                : ["LMOD_CMD",
                                          "LMOD_SYSTEM_DEFAULT_MODULES",
-                                         "LD_LIBRARY_PATH"
-                                        ]
+                                         "LD_LIBRARY_PATH"],
+        "cu_pre_exec"                 : ["module restore"]
     }
 }
+

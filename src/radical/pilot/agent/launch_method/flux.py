@@ -60,7 +60,7 @@ flux start -o,-v,-S,log-filename=flux.log
         while True:
 
             line = ru.as_string(proc.stdout.readline().strip())
-            logger.debug('=== %s', line)
+            logger.debug('flux output: %s', line)
 
             if line.startswith('export '):
                 k, v = line.split(' ', 1)[1].strip().split('=', 1)
@@ -91,7 +91,9 @@ flux start -o,-v,-S,log-filename=flux.log
 
 
         # ----------------------------------------------------------------------
-        def _watch_flux(proc):
+        def _watch_flux(flux_env):
+
+            logger.info('starting flux watcher')
 
             try:
 
@@ -106,7 +108,7 @@ flux start -o,-v,-S,log-filename=flux.log
                 raise
         # ----------------------------------------------------------------------
 
-        flux_watcher = mt.Thread(target=_watch_flux, args=[proc])
+        flux_watcher = mt.Thread(target=_watch_flux, args=[flux_env])
         flux_watcher.daemon = True
         flux_watcher.start()
 

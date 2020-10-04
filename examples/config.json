@@ -22,7 +22,7 @@
         "cores"    : 64
     },
 
-    "local.debug" : {
+    "local.local" : {
         "project"  : null,
         "queue"    : null,
         "schema"   : null,
@@ -79,14 +79,14 @@
         "cores"    : 56
     },
 
-    "xsede.frontera" : {
+    "tacc.frontera" : {
         "project"  : "FTA-Jha",
         "queue"    : "development",
         "schema"   : "local",
         "cores"    : 64
     },
 
-    "xsede.longhorn" : {
+    "tacc.longhorn" : {
         "project"  : "FTA-Jha",
         "queue"    : "development",
         "schema"   : "local",
@@ -173,7 +173,7 @@
     },
 
     "ornl.summit"  : {
-        "project"  : "CSC343",
+        "project"  : "MED110",
         "queue"    : "batch",
         "schema"   : "local",
         "cores"    : 168,

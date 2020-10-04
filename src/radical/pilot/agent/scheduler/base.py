@@ -233,7 +233,7 @@ class AgentSchedulingComponent(rpu.Component):
         # during agent startup.  We dig them out of the config at this point.
         #
         # NOTE: this information is insufficient for the torus scheduler!
-        self._pid                 = self._cfg['pid']
+        self._pid               = self._cfg['pid']
         self._rm_info           = self._cfg['rm_info']
         self._rm_lm_info        = self._cfg['rm_info']['lm_info']
         self._rm_node_list      = self._cfg['rm_info']['node_list']
@@ -260,7 +260,11 @@ class AgentSchedulingComponent(rpu.Component):
         # sufficient, only rebuild when we run dry
         self._waitpool = dict()  # map uid:task
         self._ts_map   = dict()
-        self._ts_valid = False  # set to False to trigger re-binning
+        self._ts_valid = False   # set to False to trigger re-binning
+        self._stats = {'skip' : 0,
+                       'try'  : 0,
+                       'fail' : 0,
+                       'ok'   : 0}
 
         # the scheduler algorithms have two inputs: tasks to be scheduled, and
         # slots becoming available (after tasks complete).
@@ -302,6 +306,7 @@ class AgentSchedulingComponent(rpu.Component):
     #
     def finalize(self):
 
+        self._prof.prof('schedule_stats', uid=self._uid, msg=self._stats)
         self._p.terminate()
 
 
@@ -636,8 +641,9 @@ class AgentSchedulingComponent(rpu.Component):
     #
     def _prof_sched_skip(self, task):
 
-        pass
+        self._stats['skip'] += 1
       # self._prof.prof('schedule_skip', uid=task['uid'])
+        pass
 
 
     # --------------------------------------------------------------------------
@@ -825,12 +831,14 @@ class AgentSchedulingComponent(rpu.Component):
         '''
 
         uid = unit['uid']
+        self._stats['try'] += 1
       # self._prof.prof('schedule_try', uid=uid)
 
         slots = self.schedule_unit(unit)
         if not slots:
 
             # schedule failure
+            self._stats['fail'] += 1
           # self._prof.prof('schedule_fail', uid=uid)
             return False
 
@@ -847,6 +855,7 @@ class AgentSchedulingComponent(rpu.Component):
         self._handle_cuda(unit)
 
         # got an allocation, we can go off and launch the process
+        self._stats['ok'] += 1
         self._prof.prof('schedule_ok', uid=uid)
 
         return True

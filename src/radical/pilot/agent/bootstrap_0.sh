@@ -199,13 +199,14 @@ create_gtod()
         shell=/bin/sh
         test -x '/bin/bash' && shell=/bin/bash
 
-        echo "#!$SHELL"                                > ./gtod
-        echo "if test -z \"\$EPOCHREALTIME\""         >> ./gtod
-        echo "then"                                   >> ./gtod
-        echo "  awk 'BEGIN {srand(); print srand()}'" >> ./gtod
-        echo "else"                                   >> ./gtod
-        echo "  echo \${EPOCHREALTIME:0:20}"          >> ./gtod
-        echo "fi"                                     >> ./gtod
+        echo "#!$SHELL"                                >  ./gtod
+        echo "unset LC_NUMERIC"                        >> ./gtod
+        echo "if test -z \"\$EPOCHREALTIME\""          >> ./gtod
+        echo "then"                                    >> ./gtod
+        echo "  awk 'BEGIN {srand(); print srand()}'"  >> ./gtod
+        echo "else"                                    >> ./gtod
+        echo "  echo \${EPOCHREALTIME:0:20}"           >> ./gtod
+        echo "fi"                                      >> ./gtod
     fi
 
     chmod 0755 ./gtod
@@ -692,7 +693,7 @@ virtenv_setup()
     case "$RP_VERSION" in
 
         local)
-            for sdist in `echo $SDISTS | tr ':' ' '`
+            for sdist in $(echo $SDISTS | tr ':' ' ')
             do
                 src=${sdist%.tgz}
                 src=${sdist%.tar.gz}
@@ -855,8 +856,14 @@ virtenv_activate()
     python_dist="$2"
 
     if test "$python_dist" = "anaconda"; then
-        test -e "`which conda`" && conda activate "$virtenv" || \
-        (test -e "$virtenv/bin/activate" && . "$virtenv/bin/activate")
+        if test -e "`which conda`"; then
+            eval "$(conda shell.posix hook)"
+            conda activate "$virtenv"
+        else
+            if test -e "$virtenv/bin/activate"; then
+                . "$virtenv/bin/activate"
+            fi
+        fi
         if test -z "$CONDA_PREFIX"; then
             echo "ERROR: activating of (conda) virtenv failed - abort"
             exit 1
@@ -865,7 +872,7 @@ virtenv_activate()
         unset VIRTUAL_ENV
         . "$virtenv/bin/activate"
         if test -z "$VIRTUAL_ENV"; then
-            echo "ERROR: activating of virtenv failed - abort"
+            echo "Loading of virtual env failed!"
             exit 1
         fi
     fi
@@ -1406,6 +1413,19 @@ pre_bootstrap_2()
 $cmd"
 }
 
+
+# -------------------------------------------------------------------------------
+#
+# untar the pilot sandbox
+#
+untar()
+{
+    # FIXME: concurrently starting pilots may conflict on SDIST extraction
+    tar="$1"
+    tar zxvf ../"$tar" -C .. "$PILOT_ID" $(echo $SDISTS | tr ':' ' ')
+}
+
+
 # ------------------------------------------------------------------------------
 #
 # MAIN
@@ -1432,31 +1452,41 @@ $cmd"
 #    -w   execute commands before bootstrapping phase 2: the worker
 #    -x   exit cleanup - delete pilot sandbox, virtualenv etc. after completion
 #    -y   runtime limit
+#    -z   untar initial pilot sandbox tarball
 #
-while getopts "a:b:cd:e:f:g:h:i:m:p:r:s:t:v:w:x:y:" OPTION; do
+# NOTE: -z makes some assumptions on sandbox and tarball location
+#
+while getopts "a:b:cd:e:f:g:h:i:m:p:r:s:t:v:w:x:y:z:" OPTION; do
     case $OPTION in
-        a)  SESSION_SANDBOX="$OPTARG"  ;;
-        b)  PYTHON_DIST="$OPTARG"  ;;
-        c)  CCM='TRUE'  ;;
-        d)  SDISTS="$OPTARG"  ;;
-        e)  pre_bootstrap_0 "$OPTARG"  ;;
-        f)  FORWARD_TUNNEL_ENDPOINT="$OPTARG"  ;;
-        g)  VIRTENV_DIST="$OPTARG"  ;;
-        h)  HOSTPORT="$OPTARG"  ;;
-        i)  PYTHON="$OPTARG"  ;;
-        m)  VIRTENV_MODE="$OPTARG"  ;;
-        p)  PILOT_ID="$OPTARG"  ;;
-        r)  RP_VERSION="$OPTARG"  ;;
-        s)  SESSION_ID="$OPTARG"  ;;
-        t)  TUNNEL_BIND_DEVICE="$OPTARG" ;;
-        v)  VIRTENV=$(eval echo "$OPTARG")  ;;
-        w)  pre_bootstrap_2 "$OPTARG"  ;;
-        x)  CLEANUP="$OPTARG"  ;;
-        y)  RUNTIME="$OPTARG"  ;;
+        a)  SESSION_SANDBOX="$OPTARG"         ;;
+        b)  PYTHON_DIST="$OPTARG"             ;;
+        c)  CCM='TRUE'                        ;;
+        d)  SDISTS="$OPTARG"                  ;;
+        e)  pre_bootstrap_0 "$OPTARG"         ;;
+        f)  FORWARD_TUNNEL_ENDPOINT="$OPTARG" ;;
+        g)  VIRTENV_DIST="$OPTARG"            ;;
+        h)  HOSTPORT="$OPTARG"                ;;
+        i)  PYTHON="$OPTARG"                  ;;
+        m)  VIRTENV_MODE="$OPTARG"            ;;
+        p)  PILOT_ID="$OPTARG"                ;;
+        r)  RP_VERSION="$OPTARG"              ;;
+        s)  SESSION_ID="$OPTARG"              ;;
+        t)  TUNNEL_BIND_DEVICE="$OPTARG"      ;;
+        v)  VIRTENV=$(eval echo "$OPTARG")    ;;
+        w)  pre_bootstrap_2 "$OPTARG"         ;;
+        x)  CLEANUP="$OPTARG"                 ;;
+        y)  RUNTIME="$OPTARG"                 ;;
+        z)  TARBALL="$OPTARG"                   ;;
         *)  echo "Unknown option: '$OPTION'='$OPTARG'"
             return 1;;
     esac
 done
+
+echo '# -------------------------------------------------------------------'
+echo '# untar sandbox'
+echo '# -------------------------------------------------------------------'
+untar "$TARBALL"
+echo '# -------------------------------------------------------------------'
 
 # before we change anything else in the pilot environment, we safe a couple of
 # env vars to later re-create a close-to-pristine env for unit execution.
@@ -1737,9 +1767,14 @@ cd $PILOT_SANDBOX
 export PATH="$PB1_PATH"
 export LD_LIBRARY_PATH="$PB1_LDLB"
 
+# pass environment variables down so that module load becomes effective at
+# the other side too (e.g. sub-agents).
+$PREBOOTSTRAP2_EXPANDED
+
 # activate virtenv
 if test "$PYTHON_DIST" = "anaconda" && test -e "`which conda`"
 then
+    eval "\$(conda shell.posix hook)"
     conda activate $VIRTENV
 else
     . $VIRTENV/bin/activate
@@ -1761,10 +1796,6 @@ unset RADICAL_PILOT_DBURL
 
 # avoid ntphost lookups on compute nodes
 export RADICAL_PILOT_NTPHOST=$RADICAL_PILOT_NTPHOST
-
-# pass environment variables down so that module load becomes effective at
-# the other side too (e.g. sub-agents).
-$PREBOOTSTRAP2_EXPANDED
 
 # start agent, forward arguments
 # NOTE: exec only makes sense in the last line of the script
