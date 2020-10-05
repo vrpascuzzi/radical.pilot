@@ -190,7 +190,7 @@
 
     "ornl.summit_flux" : {
         "project"  : "med110",
-        "queue"    : "debug",
+        "queue"    : "batch",
         "schema"   : "local",
         "cores"    : 168,
         "gpus"     : 6

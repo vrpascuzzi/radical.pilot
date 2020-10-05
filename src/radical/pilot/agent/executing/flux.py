@@ -54,7 +54,7 @@ class Flux(AgentExecutingComponent) :
                           }
 
         # thread termination signal
-        self._term = mt.Event()
+        self._term    = mt.Event()
 
         # need two queues, for tasks and events
         self._task_q  = queue.Queue()
@@ -113,7 +113,7 @@ class Flux(AgentExecutingComponent) :
 
         self._task_q.put(ru.as_list(units))
 
-        if self._term:
+        if self._term.is_set():
             self._log.warn('threads triggered termination')
             self.stop()
 
@@ -168,10 +168,11 @@ class Flux(AgentExecutingComponent) :
 
         except Exception:
 
+            self._log.exception('=== Error in listener loop')
+
             if flux_handle:
                 flux_handle.event_unsubscribe('job-state')
 
-            self._log.exception('Error in listener loop')
             self._term.set()
 
 
@@ -188,7 +189,9 @@ class Flux(AgentExecutingComponent) :
 
         for event in events:
 
-            flux_id, flux_state = event
+            flux_id    = event[0]
+            flux_state = event[1]
+
             state = self._event_map[flux_state]
 
             if state is None:
@@ -259,8 +262,10 @@ class Flux(AgentExecutingComponent) :
 
                     for event in self._event_q.get_nowait():
 
-                        flux_id, flux_event = event
+                        self._log.debug('=== ev : %s', event)
+                        self._log.debug('=== ids: %s', tasks.keys())
 
+                        flux_id = event[0]
                         if flux_id in tasks:
 
                             # known task - handle events
@@ -287,7 +292,7 @@ class Flux(AgentExecutingComponent) :
 
 
         except Exception:
-            self._log.exception('Error in watcher loop')
+            self._log.exception('=== Error in watcher loop')
             self._term.set()
 
 

@@ -44,7 +44,7 @@ class Flux(LaunchMethod):
         with open('flux_launcher.sh', 'w') as fout:
             fout.write('''#/bin/sh
 export PMIX_MCA_gds='^ds12,ds21'
-echo "flux env; echo "hostname $(hostname -f)" ; echo OK; while true; do echo ok; sleep 1; done" | \\
+echo "flux env; echo -n 'hostname:'; hostname -f; echo OK; while true; do echo ok; sleep 1; done" | \\
 jsrun -a 1 -c ALL_CPUS -g ALL_GPUS -n %d --bind none --smpiargs '-disable_gpu_hooks' \\
 flux start -o,-v,-S,log-filename=flux.log
 ''' % len(rm.node_list))
@@ -53,22 +53,22 @@ flux start -o,-v,-S,log-filename=flux.log
         proc = sp.Popen(cmd, shell=True,
                         stdin=sp.PIPE, stdout=sp.PIPE, stderr=sp.STDOUT)
 
-        logger.debug('=== %s', cmd)
+        logger.debug('=== flux cmd %s', cmd)
 
         hostname = None
         flux_env = dict()
         while True:
 
             line = ru.as_string(proc.stdout.readline().strip())
-            logger.debug('flux output: %s', line)
+            logger.debug('=== flux output: %s', line)
 
             if line.startswith('export '):
                 k, v = line.split(' ', 1)[1].strip().split('=', 1)
                 flux_env[k] = v.strip('"')
                 logger.debug('%s = %s' % (k, v.strip('"')))
 
-            elif line.startswith('hostname '):
-                hostname = line.split()[1]
+            elif line.startswith('hostname:'):
+                hostname = line.split(':')[1].strip()
                 logger.debug('hostname = %s' % hostname)
 
             elif line == 'OK':
@@ -81,11 +81,11 @@ flux start -o,-v,-S,log-filename=flux.log
         # TODO check perf implications
         flux_uri             = flux_env['FLUX_URI']
         flux_uri             = ru.Url(flux_uri)
-        flux_uri.host        = get_hostname()
+        flux_uri.host        = hostname
         flux_uri.scheme      = 'ssh'
         flux_env['FLUX_URI'] = str(flux_uri)
 
-        self._log.debug('=== flux uri: %s', flux_uri)
+        logger.debug('=== flux uri: %s', flux_uri)
 
         profiler.prof('flux_started')
 

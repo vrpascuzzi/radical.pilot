@@ -28,6 +28,7 @@ class Flux(AgentSchedulingComponent):
     def __init__(self, cfg, session):
 
         self.nodes = None
+        self._pwd  = os.getcwd()
 
         AgentSchedulingComponent.__init__(self, cfg, session)
 
@@ -75,8 +76,73 @@ class Flux(AgentSchedulingComponent):
           # # FIXME: transfer from executor
           # self._cu_environment = self._populate_cu_environment()
 
-            jd  = json.dumps(ru.read_json('/home/merzky/projects/flux/spec.json'))
-            jid = flux_job.submit(self._flux, jd)
+            uid  = unit['uid']
+            cud  = unit['description']
+            sbox = '%s/%s' % (self._pwd, uid)
+            spec = {'version'  : 1,
+                    'resources': [{
+                        'type'   : 'node',
+                        'count'  : 1,
+                        'with'   : [{
+                            'type' : 'slot',
+                            'count': 1,
+                            'label': 'default',
+                            'with' : [{
+                                'type' : 'core',
+                                'count': 1
+                                }]
+                            }]
+                        }],
+                    'tasks': [{
+                        'command': [ '/bin/sh', '-c', '/bin/date > out' ],
+                        'slot'   : 'default',
+                        'count'  : {
+                            'per_slot': 1
+                            }
+                        }],
+                    'attributes': {
+                        'system'       : {
+                            'duration'   : 1.0,
+                            'cwd'        : sbox,
+                            'environment': {
+                                'FOO': 'BAR'
+                                }
+                            }
+                        }
+                    }
+          # spec = {
+          #         'tasks': [{
+          #             'slot'      : 'task', 
+          #             'count'     : {'per_slot': 1},
+          #             'command'   : [cud['executable']] + cud['arguments']}],
+          #
+          #         'attributes': {
+          #             'system': {
+          #                 'cwd': sbox,
+          #                 'environment': {
+          #                     'HOME': '/home/flux'
+          #                     }
+          #                 }
+          #             }
+          #         'version'   : 1,
+          #         'resources' : [{
+          #             'count' : cud['cpu_processes'], 
+          #             'type'  : 'slot', 
+          #             'label' : 'task',
+          #             'with'  : [{
+          #                 'count': cud['cpu_threads'],
+          #                 'type' : 'core'
+          #             }, {
+          #                 'count': cud['gpu_processes'], 
+          #                 'type' : 'gpu'
+          #             }]
+          #         }]
+          #     }
+
+            ru.rec_makedir(sbox)
+            ru.write_json(spec, '%s/%s.flux' % (sbox, uid))
+    
+            jid = flux_job.submit(self._flux, json.dumps(spec))
             unit['flux_id'] = jid
 
             # publish without state changes - those are retroactively applied
