@@ -80,8 +80,9 @@ if __name__ == '__main__':
             # create a new CU description, and fill it.
             # Here we don't use dict initialization.
             cud = rp.ComputeUnitDescription()
-            cud.executable    = '/bin/date'
+            cud.executable    = '%s/examples/hello_rp.sh' % os.getcwd()
             cud.cpu_processes = 1
+            cud.gpu_processes = 1
             cuds.append(cud)
             report.progress()
 

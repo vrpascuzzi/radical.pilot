@@ -198,12 +198,17 @@ class Flux(AgentExecutingComponent) :
                 # ignore this state transition
                 self._log.debug('ignore flux event %s:%s' %
                                 (task['uid'], flux_state))
+                continue
+
+            self._log.debug('handle flux event %s:%s:%s' %
+                            (task['uid'], flux_state, state))
 
             # FIXME: how to get actual event transition timestamp?
           # ts = event.time
             ts = time.time()
 
             if state == rps.AGENT_STAGING_OUTPUT_PENDING:
+
                 task['target_state'] = rps.DONE  # FIXME
                 # on completion, push toward output staging
                 self.advance(task, state, ts=ts, publish=True, push=True)

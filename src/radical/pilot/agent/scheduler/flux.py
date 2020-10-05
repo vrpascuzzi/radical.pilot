@@ -37,6 +37,9 @@ class Flux(AgentSchedulingComponent):
     #
     def _configure(self):
 
+        self.gtod   = "%s/gtod" % self._pwd
+        self.prof   = "%s/prof" % self._pwd
+
         flux_env = self._cfg['rm_info']['lm_info']['flux_env']
         for k,v in flux_env.items():
             os.environ[k] = v
@@ -78,24 +81,83 @@ class Flux(AgentSchedulingComponent):
 
             uid  = unit['uid']
             cud  = unit['description']
-            sbox = '%s/%s' % (self._pwd, uid)
+            sbox = unit['unit_sandbox_path']
+
+            ru.rec_makedir(sbox)
+
+            env = dict()
+            env['RADICAL_BASE']      = self._pwd
+            env['RP_SESSION_ID']     = self._cfg['sid']
+            env['RP_PILOT_ID']       = self._cfg['pid']
+            env['RP_AGENT_ID']       = self._cfg['aid']
+            env['RP_SPAWNER_ID']     = self.uid
+            env['RP_UNIT_ID']        = uid
+            env['RP_UNIT_NAME']      = cud.get('name')
+            env['RP_GTOD']           = self.gtod
+            env['RP_PROF']           = self.prof
+          # env['RP_TMP']            = self._cu_tmp
+            env['RP_UNIT_SANDBOX']   = sbox
+            env['RP_PILOT_SANDBOX']  = self._pwd
+            env['RP_PILOT_STAGING']  = self._pwd
+
+            if self._prof.enabled:
+                env['RP_PROF_TGT']   = '%s/%s.prof' % (sbox, uid)
+
+            else:
+                env['RP_PROF_TGT']   = ''
+
+            if 'RP_APP_TUNNEL' in os.environ:
+                env['RP_APP_TUNNEL'] = os.environ['RP_APP_TUNNEL']
+
+
+            # FLUX does not support stdio redirection (?), so we wrap the
+            # command into a small shell script to obtain that.  That also
+            # includes pre-exec and post-exec.
+            # NOTE:  this implies that pre- and post-exec are executed 
+            #        *per rank*, which can put significant strain on the
+            #        file system.  
+            # FIXME: use env isolation
+
+            script = '%s/%s.sh' % (sbox, uid)
+            with open(script, 'w') as fout:
+                fout.write('#!/bin/sh\n')
+
+                fout.write('\n# change to sandbox\n\n')
+                fout.write('cd %s\n' % sbox)
+
+                fout.write('\n# pre exec\n\n')
+                for pe in cud['pre_exec']:
+                    fout.write('%s\n' % pe)
+
+                fout.write('\n# exec\n\n')
+                fout.write('%s %s > %s.out 2> %s.err\n' 
+                          % (cud['executable'], ' '.join(cud['arguments']),
+                             uid, uid))
+
+                fout.write('\n# post exec\n\n')
+                for pe in cud['post_exec']:
+                    fout.write('%s\n' % pe)
+
             spec = {'version'  : 1,
                     'resources': [{
                         'type'   : 'node',
                         'count'  : 1,
                         'with'   : [{
                             'type' : 'slot',
-                            'count': 1,
-                            'label': 'default',
+                            'count': cud['cpu_processes'],
+                            'label': 'task_slot',
                             'with' : [{
                                 'type' : 'core',
-                                'count': 1
+                                'count': cud['cpu_threads']
+                                }, {
+                                'type' : 'gpu',
+                                'count': cud['gpu_processes']
                                 }]
                             }]
                         }],
                     'tasks': [{
-                        'command': [ '/bin/sh', '-c', '/bin/date > out' ],
-                        'slot'   : 'default',
+                        'command': ['/bin/sh', script], 
+                        'slot'   : 'task_slot',
                         'count'  : {
                             'per_slot': 1
                             }
@@ -104,42 +166,11 @@ class Flux(AgentSchedulingComponent):
                         'system'       : {
                             'duration'   : 1.0,
                             'cwd'        : sbox,
-                            'environment': {
-                                'FOO': 'BAR'
-                                }
+                            'environment': env
                             }
                         }
                     }
-          # spec = {
-          #         'tasks': [{
-          #             'slot'      : 'task', 
-          #             'count'     : {'per_slot': 1},
-          #             'command'   : [cud['executable']] + cud['arguments']}],
-          #
-          #         'attributes': {
-          #             'system': {
-          #                 'cwd': sbox,
-          #                 'environment': {
-          #                     'HOME': '/home/flux'
-          #                     }
-          #                 }
-          #             }
-          #         'version'   : 1,
-          #         'resources' : [{
-          #             'count' : cud['cpu_processes'], 
-          #             'type'  : 'slot', 
-          #             'label' : 'task',
-          #             'with'  : [{
-          #                 'count': cud['cpu_threads'],
-          #                 'type' : 'core'
-          #             }, {
-          #                 'count': cud['gpu_processes'], 
-          #                 'type' : 'gpu'
-          #             }]
-          #         }]
-          #     }
 
-            ru.rec_makedir(sbox)
             ru.write_json(spec, '%s/%s.flux' % (sbox, uid))
     
             jid = flux_job.submit(self._flux, json.dumps(spec))
