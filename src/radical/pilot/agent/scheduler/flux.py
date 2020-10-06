@@ -45,6 +45,7 @@ class Flux(AgentSchedulingComponent):
             os.environ[k] = v
 
         import flux
+        from   flux import job
 
         flux_url   = flux_env['FLUX_URI']
         self._flux = flux.Flux(url=flux_url)
@@ -172,8 +173,27 @@ class Flux(AgentSchedulingComponent):
                     }
 
             ru.write_json(spec, '%s/%s.flux' % (sbox, uid))
-    
-            jid = flux_job.submit(self._flux, json.dumps(spec))
+            js = flux_job.JobspecV1(tasks=spec['tasks'],
+                                    resources=spec['resources'], 
+                                    version=spec['version'], 
+                                    attributes=spec['attributes'])
+
+          # js = flux_job.JobspecV1.from_command(['/bin/date'])
+
+            js.stdout = '%s/%s.js.out' % (sbox, uid)
+            js.stderr = '%s/%s.js.err' % (sbox, uid)
+
+            js.setattr_shell_option("output.stdout.type", "file")
+            js.setattr_shell_option("output.stderr.type", "file")
+            js.setattr_shell_option("output.stdout.path", '%s/%s.js.out' % (sbox, uid))
+            js.setattr_shell_option("output.stderr.path", '%s/%s.js.err' % (sbox, uid))
+
+            js.setattr_shell_option("output.stdout.label", True)
+            js.setattr_shell_option("output.stderr.label", True)
+
+            self._log.debug('=== js: %s', js.dumps())
+
+            jid = flux_job.submit(self._flux, js, debug=True)
             unit['flux_id'] = jid
 
             # publish without state changes - those are retroactively applied
