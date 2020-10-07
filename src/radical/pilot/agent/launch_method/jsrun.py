@@ -163,9 +163,9 @@ class JSRUN(LaunchMethod):
         # We only set this for CUDA tasks
         if 'cuda' in cud.get('gpu_thread_type', '').lower():
             if 'mpi' in cud.get('gpu_process_type', '').lower():
-                smpiargs = '--smpiargs="-gpu"'
+                smpiargs = '--smpiargs="-gpu -disable_gpu_hooks"'
             else:
-                smpiargs = '--smpiargs="off"'
+                smpiargs = '--smpiargs="off -disable_gpu_hooks"'
         else:
             smpiargs = ''
 
@@ -173,7 +173,8 @@ class JSRUN(LaunchMethod):
                                                   sandbox=task_sandbox)
 
       # flags = '-n%d -a1 ' % (task_procs)
-        command = '%s --erf_input %s %s %s %s' % (self.launch_command, rs_fname,
+        command = 'strace %s --erf_input %s %s %s %s' % (self.launch_command,
+                                                  rs_fname,
                                                   smpiargs, env_string,
                                                   task_command)
 
