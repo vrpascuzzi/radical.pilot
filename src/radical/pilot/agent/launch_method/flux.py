@@ -26,11 +26,11 @@ class Flux(LaunchMethod):
     # --------------------------------------------------------------------------
     #
     @classmethod
-    def rm_shutdown_hook(cls, name, cfg, rm, logger, profiler):
+    def rm_shutdown_hook(cls, name, cfg, rm, lm_info, logger, profiler):
         
 
         logger.debug('terminate flux')
-        os.kill(rm.lm_info['flux_pid'], signal.SIGKILL)
+        os.kill(lm_info['flux_pid'], signal.SIGKILL)
 
 
     # --------------------------------------------------------------------------

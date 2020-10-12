@@ -290,7 +290,7 @@
         "mpi_launch_method"           : "FLUX",
         "rp_version"                  : "installed",
         "virtenv_mode"                : "use",
-        "virtenv"                     : "/gpfs/alpine/med110/scratch/merzky1/radical.pilot.sandbox/ve.to",
+        "virtenv"                     : "/gpfs/alpine/med110/scratch/merzky1/radical.pilot.sandbox/ve.flux",
         "python_dist"                 : "default",
         "pre_bootstrap_0"             : [
                                          "module unload xl",
@@ -326,3 +326,4 @@
                                          "options": ["gpumps"]}
     }
 }
+

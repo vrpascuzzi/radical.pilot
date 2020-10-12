@@ -86,6 +86,61 @@ class Flux(AgentSchedulingComponent):
 
             ru.rec_makedir(sbox)
 
+            spec = self._task_to_flux(uid, cud, sbox)
+
+            jid = flux_job.submit(self._flux, spec, debug=True)
+            unit['flux_id'] = jid
+
+            # publish without state changes - those are retroactively applied
+            # based on flux event timestamps.
+            # TODO: apply some bulking, submission is not really fast.
+            #       But at the end performance is determined by flux now, so
+            #       communication only affects timelyness of state updates.
+            self._q.put(unit)
+
+
+    # --------------------------------------------------------------------------
+    #
+    def _task_2_flux(self, uid, cud, sbox):
+        '''
+
+        The translator between RP and FLUX job description supports the
+        following keys:
+
+            - NAME                  :
+            - EXECUTABLE            : tasks.command
+            - ARGUMENTS             : tasks.command
+            - ENVIRONMENT           : attributes.system.environment
+            - SANDBOX               : attributes.system.cwd
+
+            - CPU_PROCESSES         : resources.slot.count ?
+            - CPU_PROCESS_TYPE      : ?
+            - CPU_THREADS           : resources.slot.core.count
+            - CPU_THREAD_TYPE       : ?
+            
+            - GPU_PROCESSES         : resource.slot.gpu.count
+            - GPU_PROCESS_TYPE      : ?
+            - GPU_THREADS           : -/-
+            - GPU_THREAD_TYPE       : -/-
+           
+            - LFS_PER_PROCESS       : ?
+            - MEM_PER_PROCESS       : ?
+          
+            - INPUT_STAGING         : n/a
+            - OUTPUT_STAGING        : n/a 
+            - PRE_EXEC              : n/a 
+            - POST_EXEC             : n/a 
+            - KERNEL                : RP specific
+            - CLEANUP               : n/a
+            - PILOT                 : RP specific
+            - STDOUT                : n/a
+            - STDERR                : n/a
+            - RESTARTABLE           : RP specific (workflow layer)
+            - TAGS                  : RP specific (co-scheduling, priority, ...)
+            - METADATA              : RP specific
+        '''
+
+
             env = dict()
             env['RADICAL_BASE']      = self._pwd
             env['RP_SESSION_ID']     = self._cfg['sid']
@@ -118,6 +173,8 @@ class Flux(AgentSchedulingComponent):
             #        *per rank*, which can put significant strain on the
             #        file system.  
             # FIXME: use env isolation
+            # FLUX?: stdout / stderr
+            # FLUX?: pre_exec / post_exec 
 
             script = '%s/%s.sh' % (sbox, uid)
             with open(script, 'w') as fout:
@@ -150,9 +207,10 @@ class Flux(AgentSchedulingComponent):
                             'with' : [{
                                 'type' : 'core',
                                 'count': cud['cpu_threads']
-                                }, {
-                                'type' : 'gpu',
-                                'count': cud['gpu_processes']
+                              # FLUX: #flux-framework/flux-core/issues/3263
+                              # }, {
+                              # 'type' : 'gpu',
+                              # 'count': cud['gpu_processes']
                                 }]
                             }]
                         }],
@@ -178,8 +236,8 @@ class Flux(AgentSchedulingComponent):
                                     version=spec['version'], 
                                     attributes=spec['attributes'])
 
-          # js = flux_job.JobspecV1.from_command(['/bin/date'])
-
+            # FLUX: not part of V1 spec?
+            # FLUX: does not work?
             js.stdout = '%s/%s.js.out' % (sbox, uid)
             js.stderr = '%s/%s.js.err' % (sbox, uid)
 
@@ -193,15 +251,7 @@ class Flux(AgentSchedulingComponent):
 
             self._log.debug('=== js: %s', js.dumps())
 
-            jid = flux_job.submit(self._flux, js, debug=True)
-            unit['flux_id'] = jid
-
-            # publish without state changes - those are retroactively applied
-            # based on flux event timestamps.
-            # TODO: apply some bulking, submission is not really fast.
-            #       But at the end performance is determined by flux now, so
-            #       communication only affects timelyness of state updates.
-            self._q.put(unit)
+            return js
 
 
   # # --------------------------------------------------------------------------
