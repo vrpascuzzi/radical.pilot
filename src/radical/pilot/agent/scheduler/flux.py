@@ -207,7 +207,7 @@ class Flux(AgentSchedulingComponent):
                         'with' : [{
                             'type' : 'core',
                             'count': cud['cpu_threads']
-                            FLUX: #flux-framework/flux-core/issues/3263
+                          # FLUX: #flux-framework/flux-core/issues/3263
                             }, {
                             'type' : 'gpu',
                             'count': cud['gpu_processes']
