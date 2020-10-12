@@ -246,7 +246,7 @@ prof(){
     event=$1
     msg=$2
     now=$($RP_GTOD)
-    echo "$now,$event,unit_script,MainThread,$RP_UNIT_ID,AGENT_EXECUTING,$msg" >> $RP_PROF
+    echo "$now,$event,unit_script,MainThread,$RP_UNIT_ID,AGENT_EXECUTING,$msg" >> $RP_PROF_TGT
 }
 '''
 

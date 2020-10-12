@@ -278,8 +278,7 @@
         "task_launch_method"          : "FLUX",
         "mpi_launch_method"           : "FLUX",
         "rp_version"                  : "installed",
-        "virtenv_mode"                : "use",
-        "virtenv"                     : "$HOME/radical/radical.pilot.test/ve3/",
+        "virtenv_mode"                : "local",
         "python_dist"                 : "default",
         "pre_bootstrap_0"             : [
             "export FLUX_DIR=/home/merzky/projects/flux/install/",

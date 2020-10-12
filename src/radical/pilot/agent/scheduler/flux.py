@@ -141,117 +141,117 @@ class Flux(AgentSchedulingComponent):
         '''
 
 
-            env = dict()
-            env['RADICAL_BASE']      = self._pwd
-            env['RP_SESSION_ID']     = self._cfg['sid']
-            env['RP_PILOT_ID']       = self._cfg['pid']
-            env['RP_AGENT_ID']       = self._cfg['aid']
-            env['RP_SPAWNER_ID']     = self.uid
-            env['RP_UNIT_ID']        = uid
-            env['RP_UNIT_NAME']      = cud.get('name')
-            env['RP_GTOD']           = self.gtod
-            env['RP_PROF']           = self.prof
-          # env['RP_TMP']            = self._cu_tmp
-            env['RP_UNIT_SANDBOX']   = sbox
-            env['RP_PILOT_SANDBOX']  = self._pwd
-            env['RP_PILOT_STAGING']  = self._pwd
+        env = dict()
+        env['RADICAL_BASE']      = self._pwd
+        env['RP_SESSION_ID']     = self._cfg['sid']
+        env['RP_PILOT_ID']       = self._cfg['pid']
+        env['RP_AGENT_ID']       = self._cfg['aid']
+        env['RP_SPAWNER_ID']     = self.uid
+        env['RP_UNIT_ID']        = uid
+        env['RP_UNIT_NAME']      = cud.get('name')
+        env['RP_GTOD']           = self.gtod
+        env['RP_PROF']           = self.prof
+      # env['RP_TMP']            = self._cu_tmp
+        env['RP_UNIT_SANDBOX']   = sbox
+        env['RP_PILOT_SANDBOX']  = self._pwd
+        env['RP_PILOT_STAGING']  = self._pwd
 
-            if self._prof.enabled:
-                env['RP_PROF_TGT']   = '%s/%s.prof' % (sbox, uid)
+        if self._prof.enabled:
+            env['RP_PROF_TGT']   = '%s/%s.prof' % (sbox, uid)
 
-            else:
-                env['RP_PROF_TGT']   = ''
+        else:
+            env['RP_PROF_TGT']   = ''
 
-            if 'RP_APP_TUNNEL' in os.environ:
-                env['RP_APP_TUNNEL'] = os.environ['RP_APP_TUNNEL']
+        if 'RP_APP_TUNNEL' in os.environ:
+            env['RP_APP_TUNNEL'] = os.environ['RP_APP_TUNNEL']
 
 
-            # FLUX does not support stdio redirection (?), so we wrap the
-            # command into a small shell script to obtain that.  That also
-            # includes pre-exec and post-exec.
-            # NOTE:  this implies that pre- and post-exec are executed 
-            #        *per rank*, which can put significant strain on the
-            #        file system.  
-            # FIXME: use env isolation
-            # FLUX?: stdout / stderr
-            # FLUX?: pre_exec / post_exec 
+        # FLUX does not support stdio redirection (?), so we wrap the
+        # command into a small shell script to obtain that.  That also
+        # includes pre-exec and post-exec.
+        # NOTE:  this implies that pre- and post-exec are executed 
+        #        *per rank*, which can put significant strain on the
+        #        file system.  
+        # FIXME: use env isolation
+        # FLUX?: stdout / stderr
+        # FLUX?: pre_exec / post_exec 
 
-            script = '%s/%s.sh' % (sbox, uid)
-            with open(script, 'w') as fout:
-                fout.write('#!/bin/sh\n')
+        script = '%s/%s.sh' % (sbox, uid)
+        with open(script, 'w') as fout:
+            fout.write('#!/bin/sh\n')
 
-                fout.write('\n# change to sandbox\n\n')
-                fout.write('cd %s\n' % sbox)
+            fout.write('\n# change to sandbox\n\n')
+            fout.write('cd %s\n' % sbox)
 
-                fout.write('\n# pre exec\n\n')
-                for pe in cud['pre_exec']:
-                    fout.write('%s\n' % pe)
+            fout.write('\n# pre exec\n\n')
+            for pe in cud['pre_exec']:
+                fout.write('%s\n' % pe)
 
-                fout.write('\n# exec\n\n')
-                fout.write('%s %s > %s.out 2> %s.err\n' 
-                          % (cud['executable'], ' '.join(cud['arguments']),
-                             uid, uid))
+            fout.write('\n# exec\n\n')
+            fout.write('%s %s > %s.out 2> %s.err\n' 
+                      % (cud['executable'], ' '.join(cud['arguments']),
+                         uid, uid))
 
-                fout.write('\n# post exec\n\n')
-                for pe in cud['post_exec']:
-                    fout.write('%s\n' % pe)
+            fout.write('\n# post exec\n\n')
+            for pe in cud['post_exec']:
+                fout.write('%s\n' % pe)
 
-            spec = {'version'  : 1,
-                    'resources': [{
-                        'type'   : 'node',
-                        'count'  : 1,
-                        'with'   : [{
-                            'type' : 'slot',
-                            'count': cud['cpu_processes'],
-                            'label': 'task_slot',
-                            'with' : [{
-                                'type' : 'core',
-                                'count': cud['cpu_threads']
-                              # FLUX: #flux-framework/flux-core/issues/3263
-                              # }, {
-                              # 'type' : 'gpu',
-                              # 'count': cud['gpu_processes']
-                                }]
+        spec = {'version'  : 1,
+                'resources': [{
+                    'type'   : 'node',
+                    'count'  : 1,
+                    'with'   : [{
+                        'type' : 'slot',
+                        'count': cud['cpu_processes'],
+                        'label': 'task_slot',
+                        'with' : [{
+                            'type' : 'core',
+                            'count': cud['cpu_threads']
+                            FLUX: #flux-framework/flux-core/issues/3263
+                            }, {
+                            'type' : 'gpu',
+                            'count': cud['gpu_processes']
                             }]
-                        }],
-                    'tasks': [{
-                        'command': ['/bin/sh', script], 
-                        'slot'   : 'task_slot',
-                        'count'  : {
-                            'per_slot': 1
-                            }
-                        }],
-                    'attributes': {
-                        'system'       : {
-                            'duration'   : 1.0,
-                            'cwd'        : sbox,
-                            'environment': env
-                            }
+                        }]
+                    }],
+                'tasks': [{
+                    'command': ['/bin/sh', script], 
+                    'slot'   : 'task_slot',
+                    'count'  : {
+                        'per_slot': 1
+                        }
+                    }],
+                'attributes': {
+                    'system'       : {
+                        'duration'   : 1.0,
+                        'cwd'        : sbox,
+                        'environment': env
                         }
                     }
+                }
 
-            ru.write_json(spec, '%s/%s.flux' % (sbox, uid))
-            js = flux_job.JobspecV1(tasks=spec['tasks'],
-                                    resources=spec['resources'], 
-                                    version=spec['version'], 
-                                    attributes=spec['attributes'])
+        ru.write_json(spec, '%s/%s.flux' % (sbox, uid))
+        js = flux_job.JobspecV1(tasks=spec['tasks'],
+                                resources=spec['resources'], 
+                                version=spec['version'], 
+                                attributes=spec['attributes'])
 
-            # FLUX: not part of V1 spec?
-            # FLUX: does not work?
-            js.stdout = '%s/%s.js.out' % (sbox, uid)
-            js.stderr = '%s/%s.js.err' % (sbox, uid)
+        # FLUX: not part of V1 spec?
+        # FLUX: does not work?
+        js.stdout = '%s/%s.js.out' % (sbox, uid)
+        js.stderr = '%s/%s.js.err' % (sbox, uid)
 
-            js.setattr_shell_option("output.stdout.type", "file")
-            js.setattr_shell_option("output.stderr.type", "file")
-            js.setattr_shell_option("output.stdout.path", '%s/%s.js.out' % (sbox, uid))
-            js.setattr_shell_option("output.stderr.path", '%s/%s.js.err' % (sbox, uid))
+        js.setattr_shell_option("output.stdout.type", "file")
+        js.setattr_shell_option("output.stderr.type", "file")
+        js.setattr_shell_option("output.stdout.path", '%s/%s.js.out' % (sbox, uid))
+        js.setattr_shell_option("output.stderr.path", '%s/%s.js.err' % (sbox, uid))
 
-            js.setattr_shell_option("output.stdout.label", True)
-            js.setattr_shell_option("output.stderr.label", True)
+        js.setattr_shell_option("output.stdout.label", True)
+        js.setattr_shell_option("output.stderr.label", True)
 
-            self._log.debug('=== js: %s', js.dumps())
+        self._log.debug('=== js: %s', js.dumps())
 
-            return js
+        return js
 
 
   # # --------------------------------------------------------------------------
