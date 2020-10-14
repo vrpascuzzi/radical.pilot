@@ -6,8 +6,9 @@ __license__   = 'MIT'
 import os
 import time
 import queue
-import threading as mt
+import errno
 
+import threading     as mt
 import radical.utils as ru
 
 from ...  import states    as rps
@@ -120,41 +121,48 @@ class Flux(AgentExecutingComponent) :
 
     # --------------------------------------------------------------------------
     #
+    def _get_flux_handle(self):
+
+        import flux
+        
+        flux_uri = self._cfg['rm_info']['lm_info']['flux_env']['FLUX_URI']
+        return flux.Flux(url=flux_uri)
+
+
+    # --------------------------------------------------------------------------
+    #
     def _listen(self):
 
         flux_handle = None
 
         try:
             # thread local initialization
+            flux_handle = self._get_flux_handle()
 
-            flux_env = self._cfg['rm_info']['lm_info']['flux_env']
-            for k,v in flux_env.items():
-                os.environ[k] = v
-
-            import flux
-
-            flux_url    = flux_env['FLUX_URI']
-            flux_handle = flux.Flux(url=flux_url)
             flux_handle.event_subscribe('job-state')
 
             # FIXME: how tot subscribe for task return code information?
-          # def _flux_cb(self, *args, **kwargs):
-          #     print('--------------- flux cb %s' % [args, kwargs])
-          #
-          # from flux import future as flux_future
-          # fh = self._flux.flux_job_event_watch(jobid, 'eventlog', 0)
-          # f  = flux_future.Future(fh)
-          # f.then(_flux_cb)
-
-
+            def _flux_cb(self, *args, **kwargs):
+                self._log.debug('==== flux cb    %s' % [args, kwargs])
+           
             # signal successful setup to main thread
             self._listener_setup.set()
 
-            while True:
+            while not self._term.is_set():
 
-                # FIXME: how can recv be timed out or interrupted after work
-                #        completed?
-                event = flux_handle.event_recv()
+                # `recv()` will raise an `OSError(errno=EIO)` exception once the
+                # flux instance terminated.  That is to be expected during
+                # termination, and we'll bail out peacefully in that case.
+                try:
+                    event = flux_handle.event_recv()
+                except OSError as e:
+                    if e.errno == errno.EIO and self._term.is_set():
+                        self._log.debug('lost flux during termination')
+                        break
+                    else:
+                        raise RuntimeError('list flux connection') from e
+
+                self._log.debug('==== flux event %s' % [event.payload])
 
                 if 'transitions' not in event.payload:
                     self._log.warn('unexpected flux event: %s' %
@@ -178,14 +186,17 @@ class Flux(AgentExecutingComponent) :
 
     # --------------------------------------------------------------------------
     #
-    def handle_events(self, task, events):
+    def handle_events(self, flux_handle, task, events):
         '''
         Return `True` on final events so that caller can clean caches.
         Note that this relies on Flux events to arrive in order
         (or at least in ordered bulks).
         '''
 
+        import flux.job as fjob
+
         ret = False
+        uid = task['uid']
 
         for event in events:
 
@@ -210,9 +221,43 @@ class Flux(AgentExecutingComponent) :
             if state == rps.AGENT_STAGING_OUTPUT_PENDING:
 
                 task['target_state'] = rps.DONE  # FIXME
+                ret = True
+
+                # sift through the job's event log to see what happened to it
+                # return
+                for event in fjob.event_watch(flux_handle, flux_id, 'eventlog'):
+
+                    self._log.debug('==== el: %s', event)
+
+                    if event.name == 'alloc':
+                        # FIXME: check if `alloc` is not `schedule_start`, and
+                        #        `schedule_ok` maps to `debug.start-request`
+                        self._prof.prof('schedule_ok', uid=uid, ts=event.timestamp, 
+                                state=rps.AGENT_EXECUTING_PENDING, msg=event.context)
+                        self.advance(task, rps.AGENT_EXECUTING_PENDING, ts=ts,
+                                           publish=True, push=False)
+
+                    elif event.name == 'start':
+                        self.advance(task, rps.AGENT_EXECUTING, ts=ts,
+                                           publish=True, push=False)
+
+                    elif event.name == 'finish':
+                        retval = event.context.get('status')
+                        self._prof.prof('advance', uid=uid, ts=event.timestamp, 
+                                state=rps.AGENT_STAGING_OUTPUT_PENDING, 
+                                msg=event.context)
+
+                    elif event.name == 'debug.free-request':
+                        self._prof.prof('unschedule', state=rps.AGENT_EXECUTING, 
+                             uid=uid, ts=event.timestamp, msg=event.context)
+
+                    elif event.name == 'free':
+                        self._prof.prof('unschedule_ok', uid=uid, 
+                                ts=event.timestamp, msg=event.context,
+                                state=rps.AGENT_EXECUTING)
+
                 # on completion, push toward output staging
                 self.advance(task, state, ts=ts, publish=True, push=True)
-                ret = True
 
             else:
                 # otherwise only push a state update
@@ -224,6 +269,8 @@ class Flux(AgentExecutingComponent) :
     # --------------------------------------------------------------------------
     #
     def _watch(self):
+
+        flux_handle = self._get_flux_handle()
 
         try:
 
@@ -250,7 +297,8 @@ class Flux(AgentExecutingComponent) :
 
                         # handle and purge cached events for that task
                         if flux_id in events:
-                            if self.handle_events(task, events[flux_id]):
+                            if self.handle_events(flux_handle, task,
+                                                  events[flux_id]):
                                 # task completed - purge data
                                 # NOTE: this assumes events are ordered
                                 if flux_id in events: del(events[flux_id])
@@ -274,7 +322,8 @@ class Flux(AgentExecutingComponent) :
                         if flux_id in tasks:
 
                             # known task - handle events
-                            if self.handle_events(tasks[flux_id], [event]):
+                            if self.handle_events(flux_handle, tasks[flux_id],
+                                                               [event]):
                                 # task completed - purge data
                                 # NOTE: this assumes events are ordered
                                 if flux_id in events: del(events[flux_id])

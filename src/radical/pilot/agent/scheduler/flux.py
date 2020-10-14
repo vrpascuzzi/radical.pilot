@@ -75,7 +75,9 @@ class Flux(AgentSchedulingComponent):
 
         self.advance(units, rps.AGENT_SCHEDULING, publish=True, push=False)
 
-        for unit in units:
+        for unit in ru.as_list(units):
+
+            ru.write_json('/tmp/unit.json', unit)
 
           # # FIXME: transfer from executor
           # self._cu_environment = self._populate_cu_environment()
@@ -101,7 +103,7 @@ class Flux(AgentSchedulingComponent):
 
     # --------------------------------------------------------------------------
     #
-    def _task_2_flux(self, uid, cud, sbox):
+    def _task_to_flux(self, uid, cud, sbox):
         '''
 
         The translator between RP and FLUX job description supports the
@@ -140,6 +142,7 @@ class Flux(AgentSchedulingComponent):
             - METADATA              : RP specific
         '''
 
+        from flux import job as flux_job
 
         env = dict()
         env['RADICAL_BASE']      = self._pwd
@@ -207,15 +210,16 @@ class Flux(AgentSchedulingComponent):
                         'with' : [{
                             'type' : 'core',
                             'count': cud['cpu_threads']
-                          # FLUX: #flux-framework/flux-core/issues/3263
-                            }, {
-                            'type' : 'gpu',
-                            'count': cud['gpu_processes']
+                        # # FLUX: #flux-framework/flux-core/issues/3263
+                        #   }, {
+                        #   'type' : 'gpu',
+                        #   'count': cud['gpu_processes']
                             }]
                         }]
                     }],
                 'tasks': [{
-                    'command': ['/bin/sh', script], 
+                    'command': ['/bin/date'],
+                  # 'command': ['/bin/sh', script], 
                     'slot'   : 'task_slot',
                     'count'  : {
                         'per_slot': 1
@@ -224,8 +228,8 @@ class Flux(AgentSchedulingComponent):
                 'attributes': {
                     'system'       : {
                         'duration'   : 1.0,
-                        'cwd'        : sbox,
-                        'environment': env
+                      # 'cwd'        : sbox,
+                      # 'environment': env
                         }
                     }
                 }
@@ -236,20 +240,21 @@ class Flux(AgentSchedulingComponent):
                                 version=spec['version'], 
                                 attributes=spec['attributes'])
 
-        # FLUX: not part of V1 spec?
-        # FLUX: does not work?
-        js.stdout = '%s/%s.js.out' % (sbox, uid)
-        js.stderr = '%s/%s.js.err' % (sbox, uid)
+      # # FLUX: not part of V1 spec?
+      # # FLUX: does not work?
+      # js.stdout = '%s/%s.js.out' % (sbox, uid)
+      # js.stderr = '%s/%s.js.err' % (sbox, uid)
+      #
+      # js.setattr_shell_option("output.stdout.type", "file")
+      # js.setattr_shell_option("output.stderr.type", "file")
+      # js.setattr_shell_option("output.stdout.path", '%s/%s.js.out' % (sbox, uid))
+      # js.setattr_shell_option("output.stderr.path", '%s/%s.js.err' % (sbox, uid))
+      #
+      # js.setattr_shell_option("output.stdout.label", True)
+      # js.setattr_shell_option("output.stderr.label", True)
 
-        js.setattr_shell_option("output.stdout.type", "file")
-        js.setattr_shell_option("output.stderr.type", "file")
-        js.setattr_shell_option("output.stdout.path", '%s/%s.js.out' % (sbox, uid))
-        js.setattr_shell_option("output.stderr.path", '%s/%s.js.err' % (sbox, uid))
-
-        js.setattr_shell_option("output.stdout.label", True)
-        js.setattr_shell_option("output.stderr.label", True)
-
-        self._log.debug('=== js: %s', js.dumps())
+        import pprint
+        self._log.debug('=== js: %s', pprint.pformat(js.dumps()))
 
         return js
 

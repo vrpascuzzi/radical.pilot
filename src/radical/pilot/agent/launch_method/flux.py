@@ -4,6 +4,8 @@ __license__   = "MIT"
 
 import os
 import time
+import signal
+
 import threading       as mt
 import subprocess      as sp
 
@@ -28,7 +30,6 @@ class Flux(LaunchMethod):
     @classmethod
     def rm_shutdown_hook(cls, name, cfg, rm, lm_info, logger, profiler):
         
-
         logger.debug('terminate flux')
         os.kill(lm_info['flux_pid'], signal.SIGKILL)
 
@@ -52,12 +53,17 @@ class Flux(LaunchMethod):
             raise Exception("Couldn't import flux")
 
         with open('flux_launcher.sh', 'w') as fout:
+#             fout.write('''#/bin/sh
+# export PMIX_MCA_gds='^ds12,ds21'
+# echo "flux env; echo -n 'hostname:'; hostname -f; echo OK; while true; do echo ok; sleep 1; done" | \\
+# jsrun -a 1 -c ALL_CPUS -g ALL_GPUS -n %d --bind none --smpiargs '-disable_gpu_hooks' \\
+# flux start -o,-v,-S,log-filename=flux.log
+# ''' % len(rm.node_list))
             fout.write('''#/bin/sh
 export PMIX_MCA_gds='^ds12,ds21'
 echo "flux env; echo -n 'hostname:'; hostname -f; echo OK; while true; do echo ok; sleep 1; done" | \\
-jsrun -a 1 -c ALL_CPUS -g ALL_GPUS -n %d --bind none --smpiargs '-disable_gpu_hooks' \\
 flux start -o,-v,-S,log-filename=flux.log
-''' % len(rm.node_list))
+''')
 
         cmd  = '/bin/sh ./flux_launcher.sh'
         proc = sp.Popen(cmd, shell=True,

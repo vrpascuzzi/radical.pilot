@@ -98,7 +98,7 @@ class Master(rpu.Component):
     #
     def _get_config(self, cfg=None):
         '''
-        derive a worker base configuration from the control pubsub configuration
+        derive a configuration from the control pubsub configuration
         '''
 
         # FIXME: this uses insider knowledge on the config location and
@@ -106,8 +106,8 @@ class Master(rpu.Component):
         #        base config from scratch on startup.
 
         pwd = os.getcwd()
-        ru.dict_merge(cfg, ru.read_json('%s/../control_pubsub.json' % pwd))
         os.system('ln -s ../control_pubsub.json .')
+        ru.dict_merge(cfg, ru.read_json('./control_pubsub.json'))
 
         del(cfg['channel'])
         del(cfg['cmgr'])
