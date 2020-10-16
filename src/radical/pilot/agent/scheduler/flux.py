@@ -77,28 +77,36 @@ class Flux(AgentSchedulingComponent):
 
         for unit in ru.as_list(units):
 
-            ru.write_json('/tmp/unit.json', unit)
+            try:
 
-          # # FIXME: transfer from executor
-          # self._cu_environment = self._populate_cu_environment()
+                ru.write_json('/tmp/unit.json', unit)
 
-            uid  = unit['uid']
-            cud  = unit['description']
-            sbox = unit['unit_sandbox_path']
+              # # FIXME: transfer from executor
+              # self._cu_environment = self._populate_cu_environment()
 
-            ru.rec_makedir(sbox)
+                uid  = unit['uid']
+                cud  = unit['description']
+                sbox = unit['unit_sandbox_path']
 
-            spec = self._task_to_flux(uid, cud, sbox)
+                ru.rec_makedir(sbox)
 
-            jid = flux_job.submit(self._flux, spec, debug=True)
-            unit['flux_id'] = jid
+                spec = self._task_to_flux(uid, cud, sbox)
 
-            # publish without state changes - those are retroactively applied
-            # based on flux event timestamps.
-            # TODO: apply some bulking, submission is not really fast.
-            #       But at the end performance is determined by flux now, so
-            #       communication only affects timelyness of state updates.
-            self._q.put(unit)
+                jid = flux_job.submit(self._flux, spec, debug=True)
+                unit['flux_id'] = jid
+
+                # publish without state changes - those are retroactively applied
+                # based on flux event timestamps.
+                # TODO: apply some bulking, submission is not really fast.
+                #       But at the end performance is determined by flux now, so
+                #       communication only affects timelyness of state updates.
+                self._q.put(unit)
+
+            except Exception as e:
+                self._log.exception('flux submission failed')
+                unit['target_state'] = rps.FAILED
+                self.advance(unit, rps.AGENT_STAGING_OUTPUT_PENDING,
+                                   publish=True, push=True)
 
 
     # --------------------------------------------------------------------------
@@ -210,16 +218,14 @@ class Flux(AgentSchedulingComponent):
                         'with' : [{
                             'type' : 'core',
                             'count': cud['cpu_threads']
-                        # # FLUX: #flux-framework/flux-core/issues/3263
-                        #   }, {
-                        #   'type' : 'gpu',
-                        #   'count': cud['gpu_processes']
+                         #  }, {
+                         #  'type' : 'gpu',
+                         #  'count': cud['gpu_processes']
                             }]
                         }]
                     }],
                 'tasks': [{
-                    'command': ['/bin/date'],
-                  # 'command': ['/bin/sh', script], 
+                    'command': ['/bin/sh', script], 
                     'slot'   : 'task_slot',
                     'count'  : {
                         'per_slot': 1
@@ -227,9 +233,9 @@ class Flux(AgentSchedulingComponent):
                     }],
                 'attributes': {
                     'system'       : {
-                        'duration'   : 1.0,
-                      # 'cwd'        : sbox,
-                      # 'environment': env
+                        'duration'   : 500000000.0,
+                        'cwd'        : sbox,
+                        'environment': env
                         }
                     }
                 }
@@ -240,18 +246,18 @@ class Flux(AgentSchedulingComponent):
                                 version=spec['version'], 
                                 attributes=spec['attributes'])
 
-      # # FLUX: not part of V1 spec?
-      # # FLUX: does not work?
-      # js.stdout = '%s/%s.js.out' % (sbox, uid)
-      # js.stderr = '%s/%s.js.err' % (sbox, uid)
-      #
-      # js.setattr_shell_option("output.stdout.type", "file")
-      # js.setattr_shell_option("output.stderr.type", "file")
-      # js.setattr_shell_option("output.stdout.path", '%s/%s.js.out' % (sbox, uid))
-      # js.setattr_shell_option("output.stderr.path", '%s/%s.js.err' % (sbox, uid))
-      #
-      # js.setattr_shell_option("output.stdout.label", True)
-      # js.setattr_shell_option("output.stderr.label", True)
+        # FLUX: not part of V1 spec?
+        # FLUX: does not work?
+        js.stdout = '%s/%s.js.out' % (sbox, uid)
+        js.stderr = '%s/%s.js.err' % (sbox, uid)
+       
+        js.setattr_shell_option("output.stdout.type", "file")
+        js.setattr_shell_option("output.stderr.type", "file")
+        js.setattr_shell_option("output.stdout.path", '%s/%s.js.out' % (sbox, uid))
+        js.setattr_shell_option("output.stderr.path", '%s/%s.js.err' % (sbox, uid))
+       
+        js.setattr_shell_option("output.stdout.label", True)
+        js.setattr_shell_option("output.stderr.label", True)
 
         import pprint
         self._log.debug('=== js: %s', pprint.pformat(js.dumps()))

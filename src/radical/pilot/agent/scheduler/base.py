@@ -291,6 +291,11 @@ class AgentSchedulingComponent(rpu.Component):
         self.register_input(rps.AGENT_SCHEDULING_PENDING,
                             rpc.AGENT_SCHEDULING_QUEUE, self.work)
 
+        # register FAILED output channel for units which don't even make it into
+        # the scheduling subprocess
+        self.register_output(rps.AGENT_STAGING_OUTPUT_PENDING,
+                             rpc.AGENT_STAGING_OUTPUT_QUEUE)
+
         # we need unschedule updates to learn about units for which to free the
         # allocated cores.  Those updates MUST be issued after execution, ie.
         # by the AgentExecutionComponent.
@@ -591,8 +596,14 @@ class AgentSchedulingComponent(rpu.Component):
 
 
         # register unit output channels
+        # for units which got scheduled
         self.register_output(rps.AGENT_EXECUTING_PENDING,
                              rpc.AGENT_EXECUTING_QUEUE)
+
+        # for units which met some error condition and cannot be executed
+        self.register_output(rps.AGENT_STAGING_OUTPUT_PENDING,
+                             rpc.AGENT_STAGING_OUTPUT_QUEUE)
+
 
         resources = True  # fresh start, all is free
         while not self._proc_term.is_set():
