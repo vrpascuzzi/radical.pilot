@@ -45,15 +45,6 @@ class Flux(AgentExecutingComponent) :
               further state changes in this component.
         '''
 
-        # translate Flux states to RP states
-        self._event_map = {'NEW'     : None,   # rps.AGENT_SCHEDULING,
-                           'DEPEND'  : None,
-                           'SCHED'   : rps.AGENT_EXECUTING_PENDING,
-                           'RUN'     : rps.AGENT_EXECUTING,
-                           'CLEANUP' : None,
-                           'INACTIVE': rps.AGENT_STAGING_OUTPUT_PENDING,
-                          }
-
         # thread termination signal
         self._term    = mt.Event()
 
@@ -202,66 +193,96 @@ class Flux(AgentExecutingComponent) :
 
             flux_id    = event[0]
             flux_state = event[1]
+            self._log.debug('=== full event: %s',  event)
 
-            state = self._event_map[flux_state]
-
-            if state is None:
-                # ignore this state transition
+            # translate Flux states changes to RP state transitions (task
+            # arrives here in `rps.AGENT_SCHEDULING` state
+            #
+            #    'NEW'      -->  `rps.AGENT_SCHEDULING`   (no transition)
+            #    'DEPEND'   -->  `rps.AGENT_SCHEDULING`   (no transition)
+            #    'SCHED'    -->  `rps.AGENT_EXECUTING_PENDING`
+            #    'RUN'      -->  `rps.AGENT_EXECUTING`
+            #    'CLEANUP'  -->  `rps.AGENT_EXECUTING`    (no transition)
+            #    'INACTIVE' -->  `rps.AGENT_STAGING_OUTPUT_PENDING`
+            #
+            # we don't need to do anything on most events and actually only wait
+            # for task completion (`INACTIVE`)
+            if flux_state != 'INACTIVE':
                 self._log.debug('ignore flux event %s:%s' %
                                 (task['uid'], flux_state))
                 continue
 
-            self._log.debug('handle flux event %s:%s:%s' %
-                            (task['uid'], flux_state, state))
+            self._log.debug('handle flux event %s:%s' %
+                            (task['uid'], flux_state))
 
-            # FIXME: how to get actual event transition timestamp?
-          # ts = event.time
-            ts = time.time()
+            # task is completed - sift through the job's event log to see 
+            # what happened to it and determine return code
+            for event in fjob.event_watch(flux_handle, flux_id, 'eventlog'):
 
-            if state == rps.AGENT_STAGING_OUTPUT_PENDING:
+                self._log.debug('==== el: %s', event)
+                evt = event.name
+                ts  = event.timestamp
+                ctx = event.context
+                msg = str(ctx)
 
-                task['target_state'] = rps.DONE  # FIXME
-                ret = True
+                if evt == 'alloc':
+                    # task got scheduled (resources assigned)
+                    # FIXME: maybe `alloc` is `schedule_start`, and
+                    #       `debug.start-request` maps to `schedule_ok`?
+                    self._prof.prof('schedule_ok', comp='flux',
+                                    state=rps.AGENT_SCHEDULING, 
+                                    uid=uid, ts=ts, msg=msg)
+                    self.advance(task, rps.AGENT_EXECUTING_PENDING, ts=ts,
+                                 publish=True, push=False)
 
-                # sift through the job's event log to see what happened to it
-                # return
-                for event in fjob.event_watch(flux_handle, flux_id, 'eventlog'):
+                elif evt == 'start':
+                    # task processes get started
+                    self.advance(task, rps.AGENT_EXECUTING, ts=ts,
+                                 publish=True, push=False)
+                    self._prof.prof('exec_start', comp='flux',
+                                    state=rps.AGENT_EXECUTING,
+                                    uid=uid, ts=ts, msg=msg)
+                    self._prof.prof('exec_ok', comp='flux',
+                                    state=rps.AGENT_EXECUTING,
+                                    uid=uid, ts=ts, msg=msg)
+                    self._prof.prof('cu_start', comp='flux',
+                                    state=rps.AGENT_EXECUTING,
+                                    uid=uid, ts=ts, msg=msg)
+                    self._prof.prof('cu_start', comp='flux',
+                                    state=rps.AGENT_EXECUTING,
+                                    uid=uid, ts=ts, msg=msg)
+                    self._prof.prof('cu_exec_start', comp='flux',
+                                    state=rps.AGENT_EXECUTING,
+                                    uid=uid, ts=ts, msg=msg)
 
-                    self._log.debug('==== el: %s', event)
+                elif evt == 'finish':
+                    # task processes completed - extract return code
+                    retval = ctx.get('status')
+                    if retval == 0: task['target_state'] = rps.DONE
+                    else          : task['target_state'] = rps.FAILED
+                    self._prof.prof('cu_exec_stop', comp='flux',
+                                    state=rps.AGENT_EXECUTING,
+                                    uid=uid, ts=ts, msg=msg)
+                    self._prof.prof('cu_stop', comp='flux',
+                                    state=rps.AGENT_EXECUTING,
+                                    uid=uid, ts=ts, msg=msg)
 
-                    if event.name == 'alloc':
-                        # FIXME: check if `alloc` is not `schedule_start`, and
-                        #        `schedule_ok` maps to `debug.start-request`
-                        self._prof.prof('schedule_ok', uid=uid, ts=event.timestamp, 
-                                state=rps.AGENT_EXECUTING_PENDING, msg=event.context)
-                        self.advance(task, rps.AGENT_EXECUTING_PENDING, ts=ts,
-                                           publish=True, push=False)
+                elif evt == 'debug.free-request':
+                    # request task resources to be freed
+                    self._prof.prof('unschedule', comp='flux',
+                                    state=rps.AGENT_EXECUTING, 
+                                    uid=uid, ts=ts, msg=msg)
 
-                    elif event.name == 'start':
-                        self.advance(task, rps.AGENT_EXECUTING, ts=ts,
-                                           publish=True, push=False)
+                elif evt == 'free':
+                    # task resources have been freed
+                    self._prof.prof('unschedule_ok', comp='flux',
+                                    state=rps.AGENT_EXECUTING,
+                                    uid=uid, ts=ts, msg=msg)
 
-                    elif event.name == 'finish':
-                        retval = event.context.get('status')
-                        self._prof.prof('advance', uid=uid, ts=event.timestamp, 
-                                state=rps.AGENT_STAGING_OUTPUT_PENDING, 
-                                msg=event.context)
+            # the task is completed, push it out to the output stager
+            task['state'] = rps.AGENT_STAGING_OUTPUT_PENDING
+            self.advance(task, publish=True, push=True)
 
-                    elif event.name == 'debug.free-request':
-                        self._prof.prof('unschedule', state=rps.AGENT_EXECUTING, 
-                             uid=uid, ts=event.timestamp, msg=event.context)
-
-                    elif event.name == 'free':
-                        self._prof.prof('unschedule_ok', uid=uid, 
-                                ts=event.timestamp, msg=event.context,
-                                state=rps.AGENT_EXECUTING)
-
-                # on completion, push toward output staging
-                self.advance(task, state, ts=ts, publish=True, push=True)
-
-            else:
-                # otherwise only push a state update
-                self.advance(task, state, ts=ts, publish=True, push=False)
 
         return ret
 

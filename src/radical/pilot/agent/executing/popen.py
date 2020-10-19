@@ -7,6 +7,7 @@ __license__   = "MIT"
 
 
 import os
+import sys
 import stat
 import time
 import queue
@@ -95,18 +96,8 @@ class Popen(AgentExecutingComponent) :
                 cfg     = self._cfg,
                 session = self._session)
 
-        self.gtod   = "%s/gtod" % self._pwd
-        self.prof   = "%s/prof" % self._pwd
+        # find gtod in the same place as our own python interpreter
         self.tmpdir = tempfile.gettempdir()
-
-        with open(self.prof, 'w') as fout:
-            fout.write('''#!/bin/sh
-test -z "$RP_PROF_TGT" && return
-echo "$($RP_GTOD),$1,unit_script,MainThread,$RP_UNIT_ID,AGENT_EXECUTING,$2" >> $RP_PROF_TGT
-''')
-        st = os.stat(self.prof)
-        os.chmod(self.prof, st.st_mode | stat.S_IEXEC)
-
 
 
     # --------------------------------------------------------------------------
@@ -221,14 +212,18 @@ echo "$($RP_GTOD),$1,unit_script,MainThread,$RP_UNIT_ID,AGENT_EXECUTING,$2" >> $
             env_string += 'export RP_SPAWNER_ID="%s"\n'    % self.uid
             env_string += 'export RP_UNIT_ID="%s"\n'       % cu['uid']
             env_string += 'export RP_UNIT_NAME="%s"\n'     % cu['description'].get('name')
-            env_string += 'export RP_GTOD="%s"\n'          % self.gtod
-            env_string += 'export RP_PROF="%s"\n'          % self.prof
+            env_string += 'export RP_GTOD="%s/gtod"\n'     % self._pwd
             env_string += 'export RP_TMP="%s"\n'           % self._cu_tmp
             env_string += 'export RP_UNIT_SANDBOX="%s"\n'  % sandbox
             env_string += 'export RP_PILOT_SANDBOX="%s"\n' % self._pwd
             env_string += 'export RP_PILOT_STAGING="%s/staging_area"\n' \
                                                            % self._pwd
             if self._prof.enabled:
+                env_string += 'export RP_PROF="%s/prof"\n' % self._pwd
+                env_string += 'export RP_PROF_COMP="unit_script"\n'
+                env_string += 'export RP_PROF_TID="$$"\n'
+                env_string += 'export RP_PROF_STATE="AGENT_EXECUTING"\n'
+                env_string += 'export RP_PROF_MSG=""\n'
                 env_string += 'export RP_PROF_TGT="%s/%s.prof"\n' % (sandbox, cu['uid'])
 
             else:
@@ -236,19 +231,6 @@ echo "$($RP_GTOD),$1,unit_script,MainThread,$RP_UNIT_ID,AGENT_EXECUTING,$2" >> $
 
             if 'RP_APP_TUNNEL' in os.environ:
                 env_string += 'export RP_APP_TUNNEL="%s"\n' % os.environ['RP_APP_TUNNEL']
-
-            env_string += '''
-prof(){
-    if test -z "$RP_PROF"
-    then
-        return
-    fi
-    event=$1
-    msg=$2
-    now=$($RP_GTOD)
-    echo "$now,$event,unit_script,MainThread,$RP_UNIT_ID,AGENT_EXECUTING,$msg" >> $RP_PROF_TGT
-}
-'''
 
             # FIXME: this should be set by an LaunchMethod filter or something (GPU)
             env_string += 'export OMP_NUM_THREADS="%s"\n' % descr['cpu_threads']

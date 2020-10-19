@@ -786,9 +786,6 @@ class Component(object):
                 # non-final state, ie. we want a queue to push to:
                 self._outputs[state] = self.get_output_ep(output)
 
-            self._log.debug('=== outputs 1: %s\n%s', self._outputs.keys(),
-                    ru.get_stacktrace())
-
 
     # --------------------------------------------------------------------------
     #
@@ -1216,12 +1213,8 @@ class Component(object):
                     continue
 
                 if _state not in self._outputs:
-                    self._log.debug('=== outputs 2: %s', self._outputs.keys())
                     # unknown target state -- error
                     for thing in _things:
-                        self._log.debug('=== outputs 2: %s\n%s',
-                                        self._outputs.keys(),
-                                        ru.get_stacktrace())
                         self._log.debug("lost  %s [%s]", thing['uid'], _state)
                         self._prof.prof('lost', uid=thing['uid'], state=_state,
                                         ts=ts)
@@ -1239,9 +1232,6 @@ class Component(object):
 
                 # push the thing down the drain
                 self._log.debug('put bulk %s: %s', _state, len(_things))
-                self._log.debug('=== outputs 3: %s\n%s',
-                                self._outputs.keys(),
-                                ru.get_stacktrace())
                 output.put(_things)
 
                 ts = time.time()

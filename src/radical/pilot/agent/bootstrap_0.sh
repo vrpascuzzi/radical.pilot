@@ -120,10 +120,10 @@ VIRTENV_TGZ_URL="https://files.pythonhosted.org/packages/66/f0/6867af06d2e2f511e
 VIRTENV_IS_ACTIVATED=FALSE
 
 VIRTENV_RADICAL_DEPS="pymongo colorama python-hostlist ntplib "\
-"pyzmq netifaces setproctitle msgpack future regex PyYAML cffi"
+"pyzmq netifaces setproctitle msgpack future regex PyYAML cffi radical.gtod"
 
 VIRTENV_RADICAL_MODS="pymongo colorama hostlist ntplib "\
-"zmq netifaces setproctitle msgpack future regex yaml cffi"
+"zmq netifaces setproctitle msgpack future regex yaml cffi radical.gtod"
 
 if ! test -z "$RADICAL_DEBUG"
 then
@@ -180,76 +180,52 @@ create_deactivate()
 }
 
 
+RP_PROF_TGT="bootstrap_0.prof"
+
 # ------------------------------------------------------------------------------
 #
-# If profiling is enabled, compile our little gtod app and take the first time
-#
-create_gtod()
-{
-    tmp=`date '+%s.%N' | grep N`
-    if test "$?" = 0
-    then
-        if ! contains "$tmp" '%'
-        then
-            # we can use the system tool
-            echo "#!/bin/sh"       > ./gtod
-            echo "date '+%s.%6N'" >> ./gtod
-        fi
-    else
-        shell=/bin/sh
-        test -x '/bin/bash' && shell=/bin/bash
-
-        echo "#!$SHELL"                                >  ./gtod
-        echo "unset LC_NUMERIC"                        >> ./gtod
-        echo "if test -z \"\$EPOCHREALTIME\""          >> ./gtod
-        echo "then"                                    >> ./gtod
-        echo "  awk 'BEGIN {srand(); print srand()}'"  >> ./gtod
-        echo "else"                                    >> ./gtod
-        echo "  echo \${EPOCHREALTIME:0:20}"           >> ./gtod
-        echo "fi"                                      >> ./gtod
-    fi
-
-    chmod 0755 ./gtod
-
-    TIME_ZERO=`./gtod`
-    export TIME_ZERO
+profile_event(){
+    event=$1
+    msg=$2
+    ts=$(date '+%s')
+    printf "%.4f,$event,bootstrap_0,$$,$PILOT_ID,PMGR_ACTIVE_PENDING,$msg\n" \
+           $ts >> bootstrap_0.prof
 }
 
 
 # ------------------------------------------------------------------------------
 #
-profile_event()
-{
-    if test -z "$RADICAL_PILOT_PROFILE$RADICAL_PROFILE"
-    then
-        return
-    fi
+create_unit_prof(){
 
-    PROFILE="bootstrap_0.prof"
+cat > ./gtod <<EOT
+#!/bin/sh
+$(which radical-gtod)
+EOT
 
-    event=$1
-    msg=$2
+cat > ./prof <<EOT
+#!/bin/sh
 
-    epoch=`./gtod`
-    now=$(awk "BEGIN{print($epoch - $TIME_ZERO)}")
+event="\$1"; shift
+msg="\$*"
 
-    if ! test -f "$PROFILE"
-    then
-        # initialize profile
-        echo "#time,name,uid,state,event,msg" > "$PROFILE"
-    fi
+test -z "\$RADICAL_PILOT_PROFILE\$RADICAL_PROFILE" && exit 0
+test -z "\$RP_PROF_TGT"                            && exit 0
 
-    # TIME   = 0  # time of event (float, seconds since epoch)  mandatory
-    # EVENT  = 1  # event ID (string)                           mandatory
-    # COMP   = 2  # component which recorded the event          mandatory
-    # TID    = 3  # uid of thread involved                      optional
-    # UID    = 4  # uid of entity involved                      optional
-    # STATE  = 5  # state of entity involved                    optional
-    # MSG    = 6  # message describing the event                optional
-    # ENTITY = 7  # type of entity involved                     optional
-    printf "%.4f,%s,%s,%s,%s,%s,%s\n" \
-        "$now" "$event" "bootstrap_0" "MainThread" "$PILOT_ID" "PMGR_ACTIVE_PENDING" "$msg" \
-        | tee -a "$PROFILE"
+now=\$(\$RP_GTOD)           # time of event as seconds since epoch
+event="\$event"             # event ID
+comp="unit_script"          # component which recorded the event
+tid="\$PPID"                # uid of thread involved
+uid="\$RP_UNIT_ID"          # uid of entity involved
+state="AGENT_EXECUTING"     # state of entity involved 
+
+printf "%.4f,%s,%s,%s,%s,%s,%s\n" \
+       "\$now" "\$event" "\$comp" "\$tid" "\$uid" "\$state" "\$msg" \
+       >> "\$RP_PROF_TGT"
+
+EOT
+
+chmod 0755 ./gtod
+chmod 0755 ./prof
 }
 
 
@@ -304,7 +280,7 @@ waitfor()
     TIMEOUT="$1";  shift
     COMMAND="$*"
 
-    START=`echo \`./gtod\` | cut -f 1 -d .`
+    START=$(date '+%s')
     END=$((START + TIMEOUT))
     NOW=$START
 
@@ -321,7 +297,7 @@ waitfor()
         else
             echo "COND ok ($RET)"
         fi
-        NOW=`echo \`./gtod\` | cut -f 1 -d .`
+        NOW=$(date '+%s')
     done
 
     if test "$RET" = 0
@@ -1534,15 +1510,6 @@ PB1_LDLB="$LD_LIBRARY_PATH"
 # FIXME: By now the pre_process rules are already performed.
 #        We should split the parsing and the execution of those.
 #        "bootstrap start" is here so that $PILOT_ID is known.
-# Create header for profile log
-if ! test -z "$RADICAL_PILOT_PROFILE$RADICAL_PROFILE"
-then
-    echo 'create gtod'
-    create_gtod
-else
-    echo 'create gtod'
-    create_gtod
-fi
 profile_event 'bootstrap_0_start'
 
 # NOTE: if the virtenv path contains a symbolic link element, then distutil will
@@ -1734,6 +1701,9 @@ fi
 echo "ntphost: $RADICAL_PILOT_NTPHOST"
 ping -c 1 "$RADICAL_PILOT_NTPHOST" || true  # ignore errors
 
+# python is active, we have radical-gtod: create profile helper scripts
+create_unit_prof
+
 # Before we start the (sub-)agent proper, we'll create a bootstrap_2.sh script
 # to do so.  For a single agent this is not needed -- but in the case where
 # we spawn out additional agent instances later, that script can be reused to
@@ -1901,20 +1871,20 @@ do
         echo -n '.'
         if test -e "./killme.signal"
         then
-            profile_event 'killme' "`date --rfc-3339=ns | cut -c -23`"
-            profile_event 'sigterm' "`date --rfc-3339=ns | cut -c -23`"
+            profile_event 'killme'
+            profile_event 'sigterm'
             echo "send SIGTERM to $AGENT_PID ($$)"
             kill -15 $AGENT_PID
             waitfor 1 30 "kill -0  $AGENT_PID"
             test "$?" = 0 || break
 
-            profile_event 'sigkill' "`date --rfc-3339=ns | cut -c -23`"
+            profile_event 'sigkill' 
             echo "send SIGKILL to $AGENT_PID ($$)"
             kill  -9 $AGENT_PID
         fi
     else
         echo
-        profile_event 'agent_gone' "`date --rfc-3339=ns | cut -c -23`"
+        profile_event 'agent_gone' 
         echo "agent $AGENT_PID is gone"
         break
     fi
@@ -1925,7 +1895,7 @@ echo "agent $AGENT_PID is final"
 wait $AGENT_PID
 AGENT_EXITCODE=$?
 echo "agent $AGENT_PID is final ($AGENT_EXITCODE)"
-profile_event 'agent_final' "$AGENT_PID:$AGENT_EXITCODE `date --rfc-3339=ns | cut -c -23`"
+profile_event 'agent_final' "$AGENT_PID:$AGENT_EXITCODE"
 
 
 # # stop the packer.  We don't want to just kill it, as that might leave us with
@@ -1988,7 +1958,6 @@ then
         nend=`tail -n 1 *.prof | grep END | wc -l`
     done
     echo "nprofs $nprofs =? nend $nend"
-    date
     echo
     echo "# -------------------------------------------------------------------"
     echo "#"

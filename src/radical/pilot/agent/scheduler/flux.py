@@ -199,9 +199,11 @@ class Flux(AgentSchedulingComponent):
                 fout.write('%s\n' % pe)
 
             fout.write('\n# exec\n\n')
-            fout.write('%s %s > %s.out 2> %s.err\n' 
-                      % (cud['executable'], ' '.join(cud['arguments']),
-                         uid, uid))
+          # fout.write('%s %s > %s.out 2> %s.err\n' 
+          #           % (cud['executable'], ' '.join(cud['arguments']),
+          #              uid, uid))
+            fout.write('%s %s\n' % (cud['executable'],
+                                    ' '.join(cud['arguments'])))
 
             fout.write('\n# post exec\n\n')
             for pe in cud['post_exec']:
@@ -248,22 +250,57 @@ class Flux(AgentSchedulingComponent):
 
         # FLUX: not part of V1 spec?
         # FLUX: does not work?
-        js.stdout = '%s/%s.js.out' % (sbox, uid)
-        js.stderr = '%s/%s.js.err' % (sbox, uid)
+        js.stdout = '%s/%s.out' % (sbox, uid)
+        js.stderr = '%s/%s.err' % (sbox, uid)
        
-        js.setattr_shell_option("output.stdout.type", "file")
-        js.setattr_shell_option("output.stderr.type", "file")
-        js.setattr_shell_option("output.stdout.path", '%s/%s.js.out' % (sbox, uid))
-        js.setattr_shell_option("output.stderr.path", '%s/%s.js.err' % (sbox, uid))
-       
-        js.setattr_shell_option("output.stdout.label", True)
-        js.setattr_shell_option("output.stderr.label", True)
+      # js.setattr_shell_option("output.stdout.type", "file")
+      # js.setattr_shell_option("output.stderr.type", "file")
+      # js.setattr_shell_option("output.stdout.path", '%s/%s.js.out' % (sbox, uid))
+      # js.setattr_shell_option("output.stderr.path", '%s/%s.js.err' % (sbox, uid))
+      #
+      # js.setattr_shell_option("output.stdout.label", True)
+      # js.setattr_shell_option("output.stderr.label", True)
 
-        import pprint
-        self._log.debug('=== js: %s', pprint.pformat(js.dumps()))
+      # import pprint
+      # self._log.debug('=== js: %s', pprint.pformat(js.dumps()))
+      #
+      # # do a sanity check
+      # cud2 = self._flux_to_task(js)
+      # ru.write_json('cud_1.json', cud)
+      # ru.write_json('cud_2.json', cud2)
 
         return js
 
+
+    # --------------------------------------------------------------------------
+    #
+    def _flux_to_task(self, js):
+
+        from ...compute_unit_description import ComputeUnitDescription
+        cud = ComputeUnitDescription()
+
+        cud.executable  = js.tasks[0]['command'][0]
+        cud.arguments   = js.tasks[0]['command'][1:]
+        cud.environment = js.environment
+        cud.sandbox     = js.cwd
+        cud.stdout      = js.stdout 
+        cud.stderr      = js.stderr 
+        cud.stderr      = js.stderr 
+
+        import pprint
+        n_procs   = 1
+        n_gpus    = 0
+        n_threads = 1
+        for p, o, c in js.resource_walk():
+            if   o['type'] == 'slot': n_procs   = c
+            elif o['type'] == 'core': n_threads = c
+            elif o['type'] == 'gpu' : n_gpus    = c
+
+        cud.cpu_processes = n_procs
+        cud.cpu_threads   = n_threads
+        cud.gpu_processes = n_gpus
+
+        return cud.as_dict()
 
   # # --------------------------------------------------------------------------
   # #

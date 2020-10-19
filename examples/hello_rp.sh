@@ -1,17 +1,7 @@
 #!/bin/sh
 # test the correct startup of mixed OpenMP / MPI / CPU / GPU tasks
 
-prof(){
-    if test -z "$RP_PROF_TGT"
-    then
-        return
-    fi
-    event=$1
-    now=$($RP_GTOD)
-    echo "$now,$event,unit_script,MainThread,$RP_UNIT_ID,AGENT_EXECUTING," >> $RP_PROF_TGT
-}
-
-prof "app_start"
+$RP_PROF "app_start"
 
 # basic information
 ARG=$1
@@ -94,5 +84,5 @@ printf "$PREFIX : SLEEP   : $ARG\n"
 # if so requested, sleep for a bit
 sleep $ARG
 
-prof "app_stop"
+$RP_PROF "app_stop"
 
