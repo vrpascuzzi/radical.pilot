@@ -55,7 +55,7 @@ class Flux(LaunchMethod):
         with open('flux_launcher.sh', 'w') as fout:
 #             fout.write('''#/bin/sh
 # export PMIX_MCA_gds='^ds12,ds21'
-# echo "flux env; echo -n 'hostname:'; hostname -f; echo OK; while true; do echo ok; sleep 1; done" | \\
+# echo "flux env; echo -n 'hostname:'; hostname -f; echo OK; while true; do echo # ok; sleep 10; done" | \\
 # jsrun -a 1 -c ALL_CPUS -g ALL_GPUS -n %d --bind none --smpiargs '-disable_gpu_hooks' \\
 # flux start -o,-v,-S,log-filename=flux.log
 # ''' % len(rm.node_list))
@@ -96,9 +96,9 @@ flux start -o,-v,-S,log-filename=flux.log
 
         # TODO check perf implications
         flux_uri             = flux_env['FLUX_URI']
-        flux_uri             = ru.Url(flux_uri)
-        flux_uri.host        = hostname
-        flux_uri.scheme      = 'ssh'
+     #  flux_uri             = ru.Url(flux_uri)
+     #  flux_uri.host        = hostname
+     #  flux_uri.scheme      = 'ssh'
         flux_env['FLUX_URI'] = str(flux_uri)
 
         logger.debug('=== flux uri: %s', flux_uri)
@@ -117,6 +117,9 @@ flux start -o,-v,-S,log-filename=flux.log
 
                     line = ru.as_string(proc.stdout.readline().strip())
                     logger.debug('=== %s', line)
+
+                    if not line:
+                        time.sleep(10)
 
             except Exception as e:
                 logger.exception('ERROR: flux stopped?')

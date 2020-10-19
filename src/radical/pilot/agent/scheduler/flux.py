@@ -210,16 +210,14 @@ class Flux(AgentSchedulingComponent):
                         'with' : [{
                             'type' : 'core',
                             'count': cud['cpu_threads']
-                        # # FLUX: #flux-framework/flux-core/issues/3263
-                        #   }, {
-                        #   'type' : 'gpu',
-                        #   'count': cud['gpu_processes']
+                          # }, {
+                          # 'type' : 'gpu',
+                          # 'count': cud['gpu_processes']
                             }]
                         }]
                     }],
                 'tasks': [{
-                    'command': ['/bin/date'],
-                  # 'command': ['/bin/sh', script], 
+                    'command': ['/bin/sh', script], 
                     'slot'   : 'task_slot',
                     'count'  : {
                         'per_slot': 1
@@ -228,8 +226,8 @@ class Flux(AgentSchedulingComponent):
                 'attributes': {
                     'system'       : {
                         'duration'   : 1.0,
-                      # 'cwd'        : sbox,
-                      # 'environment': env
+                        'cwd'        : sbox,
+                        'environment': env
                         }
                     }
                 }
@@ -240,18 +238,18 @@ class Flux(AgentSchedulingComponent):
                                 version=spec['version'], 
                                 attributes=spec['attributes'])
 
-      # # FLUX: not part of V1 spec?
-      # # FLUX: does not work?
-      # js.stdout = '%s/%s.js.out' % (sbox, uid)
-      # js.stderr = '%s/%s.js.err' % (sbox, uid)
-      #
-      # js.setattr_shell_option("output.stdout.type", "file")
-      # js.setattr_shell_option("output.stderr.type", "file")
-      # js.setattr_shell_option("output.stdout.path", '%s/%s.js.out' % (sbox, uid))
-      # js.setattr_shell_option("output.stderr.path", '%s/%s.js.err' % (sbox, uid))
-      #
-      # js.setattr_shell_option("output.stdout.label", True)
-      # js.setattr_shell_option("output.stderr.label", True)
+        # FLUX: not part of V1 spec?
+        # FLUX: does not work?
+        js.stdout = '%s/%s.js.out' % (sbox, uid)
+        js.stderr = '%s/%s.js.err' % (sbox, uid)
+
+        js.setattr_shell_option("output.stdout.type", "file")
+        js.setattr_shell_option("output.stderr.type", "file")
+        js.setattr_shell_option("output.stdout.path", '%s/%s.js.out' % (sbox, uid))
+        js.setattr_shell_option("output.stderr.path", '%s/%s.js.err' % (sbox, uid))
+
+        js.setattr_shell_option("output.stdout.label", True)
+        js.setattr_shell_option("output.stderr.label", True)
 
         import pprint
         self._log.debug('=== js: %s', pprint.pformat(js.dumps()))
