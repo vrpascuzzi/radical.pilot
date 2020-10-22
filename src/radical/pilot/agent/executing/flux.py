@@ -5,6 +5,7 @@ __license__   = 'MIT'
 
 import os
 import time
+import json
 import queue
 import errno
 
@@ -186,14 +187,14 @@ class Flux(AgentExecutingComponent) :
 
         import flux.job as fjob
 
-        ret = False
         uid = task['uid']
-
         for event in events:
+
+            self._log.debug('=== event: %s',  event)
 
             flux_id    = event[0]
             flux_state = event[1]
-            self._log.debug('=== full event: %s',  event)
+            task['flux_states'].append(flux_state)
 
             # translate Flux states changes to RP state transitions (task
             # arrives here in `rps.AGENT_SCHEDULING` state
@@ -214,6 +215,11 @@ class Flux(AgentExecutingComponent) :
 
             self._log.debug('handle flux event %s:%s' %
                             (task['uid'], flux_state))
+
+            # on `INACTIVE`, the task is always completed.  It might not have
+            # executed though, so we set the default target state to `FAILED`
+            # and only switch to `DONE` if we find an exit code `0`.
+            task['target_state'] = rps.FAILED
 
             # task is completed - sift through the job's event log to see 
             # what happened to it and determine return code
@@ -258,8 +264,9 @@ class Flux(AgentExecutingComponent) :
                 elif evt == 'finish':
                     # task processes completed - extract return code
                     retval = ctx.get('status')
-                    if retval == 0: task['target_state'] = rps.DONE
-                    else          : task['target_state'] = rps.FAILED
+                    if retval == 0:
+                        # exit val is zero - task succeeded
+                        task['target_state'] = rps.DONE
                     self._prof.prof('cu_exec_stop', comp='flux',
                                     state=rps.AGENT_EXECUTING,
                                     uid=uid, ts=ts, msg=msg)
@@ -279,20 +286,86 @@ class Flux(AgentExecutingComponent) :
                                     state=rps.AGENT_EXECUTING,
                                     uid=uid, ts=ts, msg=msg)
 
-            # also fetch resource information
-            payload = {"id"   : flux_id,
-                       "keys" : ["R"],
-                       "flags": 0}
-            result  = flux_handle.rpc("job-info.lookup", payload).get()
-            self._log('=== resources: %s', result)
+            # also fetch resource information (only works for tasks which were
+            # actually executed)
+            # FIXME: why don't we get this after `SCHED`?
+            if 'RUN' in task['flux_states']:
+                self._log.debug('=== flux_states: %s', task['flux_states'])
+                payload = {'id'   : flux_id,
+                           'keys' : ['R'],
+                           'flags': 0}
+                result  = flux_handle.rpc('job-info.lookup', payload).get()
+                if 'R' in result:
+                    r = json.loads(result['R'])
 
+                  # {
+                  #     'version': 1, 
+                  #     'starttime': 1603360891,
+                  #     'expiration': 1603965691
+                  #     'execution': {
+                  #         'R_lite': [{
+                  #             'rank': '0',
+                  #             'node': 'rivendell',
+                  #             'children': {
+                  #                 'core': '2-7'
+                  #                 }
+                  #             }],
+                  #     }
+                  # }
+                    assert(r['version'] == 1)
+                    
+                    sl = {'cores_per_node': 8,
+                          'gpus_per_node' : 2,
+                          'mem_per_node'  : 0,
+                          'lfs_per_node'  : {'path': '/tmp', 'size': 1024},
+                          'lm_info'       : {'version_info': {
+                                                'FORK': {'version': '0.42',
+                                                         'version_detail': ''}}
+                                            },
+                          'nodes': list()}
+                    for rank in r['execution']['R_lite']:
+                        cores = self._parse_res(rank['children'].get('core'))
+                        gpus  = self._parse_res(rank['children'].get('gpu'))
+                        slot  = {
+                            'lfs'     : {'path': '/tmp', 'size': 0},
+                            'mem'     : 0,
+                            'name'    : rank['node'],
+                            'uid'     : rank['node'],
+                            'core_map': cores,
+                            'gpu_map' : gpus
+                            }
+                        sl['nodes'].append(slot)
 
-            # the task is completed, push it out to the output stager
-            task['state'] = rps.AGENT_STAGING_OUTPUT_PENDING
-            self.advance(task, publish=True, push=True)
+                    task['slots'] = sl
+                
+                    slots_fname = '%s/%s.sl' % (task['unit_sandbox_path'],
+                                                task['uid'])
+                    ru.write_json(slots_fname, task['slots'])
 
+                    slots_fname = '%s/%s.slf' % (task['unit_sandbox_path'],
+                                                 task['uid'])
+                    ru.write_json(slots_fname, r)
 
-        return ret
+                self._log.debug('=== resources: %s', result)
+
+              # {'cores_per_node': 8,
+              #  'gpus_per_node': 2,
+              #  'lfs_per_node': {'path': '/tmp', 'size': 1024},
+              #  'lm_info': {'version_info': {'FORK': {'version': '0.42',
+              #                                        'version_detail': 'There is no spoon'}}},
+              #  'mem_per_node': 0,
+              #  'nodes': [{'core_map': [[0, 1, 2]],
+              #             'gpu_map': [[0]],
+              #             'lfs': {'path': '/tmp', 'size': 0},
+              #             'mem': 0,
+              #             'name': 'localhost',
+              #             'uid': 'localhost_0'},
+              #            {'core_map': [[3, 4, 5]],
+              #             'gpu_map': [[1]],
+              #             'lfs': {'path': '/tmp', 'size': 0},
+              #             'mem': 0,
+              #             'name': 'localhost',
+              #             'uid': 'localhost_0'}]}
 
 
     # --------------------------------------------------------------------------
@@ -303,9 +376,9 @@ class Flux(AgentExecutingComponent) :
 
         try:
 
-            # thread local initialization
-            tasks  = dict()
-            events = dict()
+            # thread local cache initialization
+            tcache = dict()
+            ecache = dict()
 
             self.register_output(rps.AGENT_STAGING_OUTPUT_PENDING,
                                  rpc.AGENT_STAGING_OUTPUT_QUEUE)
@@ -315,68 +388,108 @@ class Flux(AgentExecutingComponent) :
 
             while not self._term.is_set():
 
-                active = False
-
+                tasks = list()
                 try:
-                    for task in self._task_q.get_nowait():
+                    tasks = self._task_q.get_nowait()
+                except queue.Empty:
+                    pass
+
+                for task in tasks:
 
                         flux_id = task['flux_id']
                         assert flux_id not in tasks
-                        tasks[flux_id] = task
+                        tcache[flux_id] = task
 
                         # handle and purge cached events for that task
-                        if flux_id in events:
-                            if self.handle_events(flux_handle, task,
-                                                  events[flux_id]):
-                                # task completed - purge data
+                        if flux_id in ecache :
+                            try:
+                                # known task - handle events
+                                events = ecache[flux_id]
+                                self.handle_events(flux_handle, task, events)
+
+                            except Exception as e:
+                                # event handling failed - fail the task
+                                self._log.exception('flux event handling failed')
+                                task['target_state'] = rps.FAILED
+
+                            if task.get('target_state'):
+                                # task completed - purge data and push it out
                                 # NOTE: this assumes events are ordered
-                                if flux_id in events: del(events[flux_id])
-                                if flux_id in tasks : del(tasks[flux_id])
+                                if flux_id in ecache: del(ecache[flux_id])
+                                if flux_id in tcache: del(tcache[flux_id])
 
-                    active = True
-
-                except queue.Empty:
-                    # nothing found -- no problem, check if we got some events
-                    pass
+                                self.advance(task, rps.AGENT_STAGING_OUTPUT_PENDING, 
+                                             publish=True, push=True)
 
 
+                events = list()
                 try:
-
-                    for event in self._event_q.get_nowait():
-
-                        self._log.debug('=== ev : %s', event)
-                        self._log.debug('=== ids: %s', tasks.keys())
-
-                        flux_id = event[0]
-                        if flux_id in tasks:
-
-                            # known task - handle events
-                            if self.handle_events(flux_handle, tasks[flux_id],
-                                                               [event]):
-                                # task completed - purge data
-                                # NOTE: this assumes events are ordered
-                                if flux_id in events: del(events[flux_id])
-                                if flux_id in tasks : del(tasks[flux_id])
-
-                        else:
-                            # unknown task, store events for later
-                            if flux_id not in events:
-                                events[flux_id] = list()
-                            events[flux_id].append(event)
-
-                    active = True
-
+                    events = self._event_q.get_nowait()
                 except queue.Empty:
-                    # nothing found -- no problem, check if we got some tasks
                     pass
 
-                if not active:
+
+                for event in events:
+
+                    self._log.debug('=== ev : %s', event)
+                    self._log.debug('=== ids: %s', tcache.keys())
+
+                    flux_id = event[0]
+                    if flux_id in tcache:
+
+                        task = tcache[flux_id]
+                        try:
+                            # known task - handle events
+                            self.handle_events(flux_handle, task, [event])
+
+                        except Exception as e:
+                            # event handling failed - fail the task
+                            self._log.exception('flux event handling failed')
+                            task['target_state'] = rps.FAILED
+
+                        if task.get('target_state'):
+                            # task completed - purge data and push it out
+                            # NOTE: this assumes events are ordered
+                            if flux_id in ecache: del(ecache[flux_id])
+                            if flux_id in tcache: del(tcache[flux_id])
+
+                            self.advance(task, rps.AGENT_STAGING_OUTPUT_PENDING, 
+                                         publish=True, push=True)
+
+                    else:
+                        # unknown task, store events for later
+                        if flux_id not in ecache:
+                            ecache[flux_id] = list()
+                        ecache[flux_id].append(event)
+
+
+                if not events and not tasks:
+                    # nothing done in this loop
                     time.sleep(0.01)
 
 
         except Exception:
             self._log.exception('=== Error in watcher loop')
             self._term.set()
+
+
+    # --------------------------------------------------------------------------
+    #
+    def _parse_res(self, spec):
+
+        # '1-2,3,5,8-10' -> [1,2,3,5,8,9,10]
+
+        if not spec:
+            return list()
+
+        res = list()
+        for part in spec.split(','):
+            if '-' in part:
+                start, stop = part.split('-')
+                res.extend(list(range(int(start), int(stop))))
+            else:
+                res.append(int(part))
+        return res
 
 
 # ------------------------------------------------------------------------------

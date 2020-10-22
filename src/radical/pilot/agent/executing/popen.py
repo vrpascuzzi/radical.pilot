@@ -196,8 +196,7 @@ class Popen(AgentExecutingComponent) :
         cu['stdout'] = ''
         cu['stderr'] = ''
 
-        with open(slots_fname, "w") as launch_script:
-            launch_script.write('\n%s\n\n' % pprint.pformat(cu['slots']))
+        ru.write_json(slots_fname, cu['slots'])
 
         with open(launch_script_name, "w") as launch_script:
             launch_script.write('#!/bin/sh\n\n')

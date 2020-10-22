@@ -93,7 +93,8 @@ class Flux(AgentSchedulingComponent):
                 spec = self._task_to_flux(uid, cud, sbox)
 
                 jid = flux_job.submit(self._flux, spec, debug=True)
-                unit['flux_id'] = jid
+                unit['flux_id']     = jid
+                unit['flux_states'] = list()
 
                 # publish without state changes - those are retroactively applied
                 # based on flux event timestamps.
@@ -235,8 +236,7 @@ class Flux(AgentSchedulingComponent):
                     }],
                 'attributes': {
                     'system'       : {
-                        # FIXME:
-                        'duration'   : 500000000.0,
+                        'duration'   : 0.0,
                         'cwd'        : sbox,
                         'environment': env
                         }
