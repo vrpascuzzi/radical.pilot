@@ -329,10 +329,10 @@ class Flux(AgentExecutingComponent) :
                         slot  = {
                             'lfs'     : {'path': '/tmp', 'size': 0},
                             'mem'     : 0,
-                            'name'    : rank['node'],
-                            'uid'     : rank['node'],
-                            'core_map': cores,
-                            'gpu_map' : gpus
+                            'name'    : 'localhost',    # FIXME: rank['node'],
+                            'uid'     : 'localhost_1',  # FIXME: rank['node'],
+                            'core_map': [cores],
+                            'gpu_map' : [gpus]
                             }
                         sl['nodes'].append(slot)
 
