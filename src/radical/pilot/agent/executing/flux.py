@@ -279,6 +279,14 @@ class Flux(AgentExecutingComponent) :
                                     state=rps.AGENT_EXECUTING,
                                     uid=uid, ts=ts, msg=msg)
 
+            # also fetch resource information
+            payload = {"id"   : flux_id,
+                       "keys" : ["R"],
+                       "flags": 0}
+            result  = flux_handle.rpc("job-info.lookup", payload).get()
+            self._log('=== resources: %s', result)
+
+
             # the task is completed, push it out to the output stager
             task['state'] = rps.AGENT_STAGING_OUTPUT_PENDING
             self.advance(task, publish=True, push=True)
