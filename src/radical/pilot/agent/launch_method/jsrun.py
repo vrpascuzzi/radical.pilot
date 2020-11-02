@@ -173,8 +173,7 @@ class JSRUN(LaunchMethod):
                                                   sandbox=task_sandbox)
 
       # flags = '-n%d -a1 ' % (task_procs)
-        command = 'strace %s --erf_input %s %s %s %s' % (self.launch_command,
-                                                  rs_fname,
+        command = '%s --erf_input %s %s %s %s' % (self.launch_command, rs_fname,
                                                   smpiargs, env_string,
                                                   task_command)
 
