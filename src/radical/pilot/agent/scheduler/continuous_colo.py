@@ -37,7 +37,7 @@ from ... import compute_unit_description as rpcud
 #
 #    tags = {
 #        'bot' : {
-#            'id'        : 'foo',  # mandatory
+#            'bid'       : 'foo',  # mandatory
 #            'size'      : 4,      # optional, default: 1
 #            'order'     : 2,      # optional, default: None
 #            'concurrent': False,  # optional, default: False
@@ -70,29 +70,29 @@ from ... import compute_unit_description as rpcud
 #
 # Examples:
 #
-#   task.1  id=bot1  size=4
-#   task.2  id=bot1  size=4
-#   task.3  id=bot1  size=4
-#   task.4  id=bot1  size=4
+#   task.1  bid=bot1  size=4
+#   task.2  bid=bot1  size=4
+#   task.3  bid=bot1  size=4
+#   task.4  bid=bot1  size=4
 #
 #   The tasks 1-4 will be scheduled and executed individually - but only become
 #   eligible for execution once all 4 tasks arrive in the scheduler.
 #
 #
-#   task.1  id=bot1  size=2  order=None  concurrent=True  co-locate=True
-#   task.2  id=bot1  size=2  order=None  concurrent=True  co-locate=True
-#   task.3  id=bot2  size=2  order=None  concurrent=True  co-locate=True
-#   task.4  id=bot2  size=2  order=None  concurrent=True  co-locate=True
+#   task.1  bid=bot1  size=2  order=None  concurrent=True  co-locate=True
+#   task.2  bid=bot1  size=2  order=None  concurrent=True  co-locate=True
+#   task.3  bid=bot2  size=2  order=None  concurrent=True  co-locate=True
+#   task.4  bid=bot2  size=2  order=None  concurrent=True  co-locate=True
 #
 #   tasks 1 and 2 will run concurrently on the same node, tasks 3 and 4 will
 #   also run concurrently on one node (possibly at a different time).  The node
 #   for the first batch may or may not be the same as for the second batch.
 #
 #
-#   task.1  id=bot1  size=2
-#   task.2  id=bot1  size=2
-#   task.3  id=bot1  size=2
-#   task.4  id=bot1  size=2
+#   task.1  bid=bot1  size=2
+#   task.2  bid=bot1  size=2
+#   task.3  bid=bot1  size=2
+#   task.4  bid=bot1  size=2
 #
 #   tasks 1 and 2 will run concurrently on the same node, tasks 3 and 4 will
 #   also run concurrently on _the same_ node (possibly at a different time).
@@ -100,19 +100,19 @@ from ... import compute_unit_description as rpcud
 #   batch.
 #
 #
-#   task.1  id=bot1  size=3
-#   task.2  id=bot1  size=3
-#   task.3  id=bot1  size=3
-#   task.4  id=bot1  size=3
+#   task.1  bid=bot1  size=3
+#   task.2  bid=bot1  size=3
+#   task.3  bid=bot1  size=3
+#   task.4  bid=bot1  size=3
 #
 #   tasks 1 to 3 will run concurrently on the same node, but task 4 will never
 #   get scheduled (unless more tasks arrive to complete the batch).
 #
 #
-#   task.1  id=bot1
-#   task.2  id=bot1
-#   task.3  id=bot1
-#   task.4  id=bot1
+#   task.1  bid=bot1
+#   task.2  bid=bot1
+#   task.3  bid=bot1
+#   task.4  bid=bot1
 #
 #   tasks 1 to 4 will land on the same node, possibly at different times.
 #
@@ -153,6 +153,69 @@ from ... import compute_unit_description as rpcud
 #       with `size=1`.
 #
 #
+# Implementation:
+#
+# The scheduler operates on tasks in two distinct stages:
+#
+#   1 - eligibility: a task becomes eligible for placement when all dependencies
+#       are resolved.  Dependencies are :
+#       - all bags of lower order are completed (*)
+#       - all tasks to co-locate with this task are available
+#       - all tasks to de-locate with this task are available
+#
+#   2 - placement:  a set of tasks which is eligible for placement is scheduled
+#       on the candidate nodes
+#
+#   (*) completed means that the scheduler received a notification that the task
+#       entered `UMGR_STAGING_OUTPUT_PENDING` state, implying that task
+#       execution completed and that all *local* staging directives have been
+#       enacted.
+#
+#
+# When scheduling a set of tasks, the following candidate nodes are considered
+# for placement:
+#
+#   - co-location: the first task in the respective bag is scheduled on *any*
+#     node.  Any subsequent task in the same bag will be scheduled on the *same*
+#     node as the first task - no other nodes are considered.
+#
+#   - de-location: the first task is scheduled on *any* node.  The next task in
+#     the same bag is scheduled on any node *but* the one the first is placed
+#     on, and so on.  If no nodes remain available (BoT size > n_nodes), the
+#     task will fail.
+#
+#   - concurrent: one task is scheduled after the other, according to the
+#     constraints above.  If any task in the bag fails to schedule, all
+#     previously scheduled tasks will be unscheduled and have to wait.  Tasks
+#     are advanced in bulk only after all tasks have been placed successfully.
+#
+#   - all other tasks (without locality or concurrency constraints) are
+#     scheduled individually.
+#
+#   - concurrent co-location (optimized): the resources for all tasks in the bag
+#     are added up, and a single virtual task is scheduled on *any* node.  Once
+#     the virtual task is placed, the allocation is again split up between the
+#     individual tasks, resulting in their respective placement, and the bag is
+#     advanced in bulk.
+#
+# NOTE: This functionality is dangerously close (and in fact overlapping) with
+#       workflow orchstration.  As such, it should actually not live in the
+#       scheduler but should move into a separate RCT component.  To cater for
+#       that move at a later point, we render the specific code parts as filter
+#       whose implementation we should be able to easily extract as needed.  The
+#       filter
+#
+#         - receives a set of tasks
+#         - filters tasks which are eligible to run under the given tag
+#           constraints
+#         - forwards eligible tasks to the scheduler proper
+#         - retain non-eligible tasks until new information received via any
+#           communication channels indicates that they become eligible to run
+#
+#       The wait list managed by that filer is different and independent from
+#       the wait list maintained in the scheduler where tasks are waiting for
+#       required resources to become available).
+#
 class ContinuousColo(Continuous):
 
     # --------------------------------------------------------------------------
@@ -188,7 +251,7 @@ class ContinuousColo(Continuous):
     #
     def _get_tags(self, descr):
 
-        tags = descr.get('tags', {}).get('colocate')
+        tags = descr.get('tags', {})
         if not tags:
             return {}
 

@@ -1074,7 +1074,7 @@ class Default(PMGRLaunchingComponent):
         # is used.
 
         if not rp_version.startswith('@') and \
-               rp_version not in ['installed', 'local', 'debug', 'release']:
+               rp_version not in ['installed', 'local', 'release']:
             raise ValueError("invalid rp_version '%s'" % rp_version)
 
         if rp_version.startswith('@'):
@@ -1115,7 +1115,7 @@ class Default(PMGRLaunchingComponent):
                 cleanup = cleanup.replace('v', '')
 
         # add dists to staging files, if needed
-        if rp_version in ['local', 'debug']:
+        if rp_version in ['local']:
             sdist_names = [ru.sdist_name, rs.sdist_name, self._rp_sdist_name]
             sdist_paths = [ru.sdist_path, rs.sdist_path, self._rp_sdist_path]
         else:
