@@ -475,5 +475,23 @@ class Agent_0(rpu.Worker):
         return True
 
 
+    # --------------------------------------------------------------------------
+    #
+    def _prepare_env(self, eid, env_spec):
+
+        etype = env_spec['type']
+        evers = env_spec['version']
+        emods = env_spec['setup']
+
+        assert(etype == 'virtualenv')
+        assert(evers)
+
+        rp_cse = 'radical-pilot-create-static-ve'
+        out, err, ret = ru.sh_callout('%s -p ./%s -v %s -m "%s"'
+                                     % (rp_cse, eid, evers, ','.join(emods)))
+
+        assert(not ret), [out, err]
+
+
 # ------------------------------------------------------------------------------
 
