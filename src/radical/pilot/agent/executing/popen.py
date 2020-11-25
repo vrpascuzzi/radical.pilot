@@ -270,7 +270,7 @@ class Popen(AgentExecutingComponent) :
             launch_script.write('$RP_PROF cu_start\n')
             launch_script.write('\n# Change to unit sandbox\ncd %s\n' % sandbox)
 
-            # Before the Big Bang there was nothing
+            # FIXME: cu_pre_exec should be LM specific
             if self._cfg.get('cu_pre_exec'):
                 for val in self._cfg['cu_pre_exec']:
                     launch_script.write("%s\n"  % val)
