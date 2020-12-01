@@ -1,3 +1,6 @@
+# pylint: disable=subprocess-popen-preexec-fn
+# FIXME: review pylint directive - https://github.com/PyCQA/pylint/pull/2087
+#        (https://docs.python.org/3/library/subprocess.html#popen-constructor)
 
 __copyright__ = "Copyright 2013-2016, http://radical.rutgers.edu"
 __license__   = "MIT"
@@ -17,7 +20,7 @@ import subprocess
 
 import radical.utils as ru
 
-from .... import pilot     as rp
+from ...  import agent     as rpa
 from ...  import utils     as rpu
 from ...  import states    as rps
 from ...  import constants as rpc
@@ -31,9 +34,7 @@ _pids = list()
 
 
 def _kill():
-    print('==== atexit')
     for pid in _pids:
-        print('==== kill %s' % pid)
         os.killpg(pid, signal.SIGTERM)
 
 
@@ -84,12 +85,12 @@ class Popen(AgentExecutingComponent) :
 
         # The AgentExecutingComponent needs the LaunchMethod to construct
         # commands.
-        self._task_launcher = rp.agent.LaunchMethod.create(
+        self._task_launcher = rpa.LaunchMethod.create(
                 name    = self._cfg.get('task_launch_method'),
                 cfg     = self._cfg,
                 session = self._session)
 
-        self._mpi_launcher = rp.agent.LaunchMethod.create(
+        self._mpi_launcher = rpa.LaunchMethod.create(
                 name    = self._cfg.get('mpi_launch_method'),
                 cfg     = self._cfg,
                 session = self._session)
@@ -134,12 +135,26 @@ class Popen(AgentExecutingComponent) :
     def _handle_unit(self, cu):
 
         try:
+            descr = cu['description']
+
+            # ensure that the named env exists
+            env = descr.get('named_env')
+            if env:
+                if not os.path.isdir('%s/%s' % (self._pwd, env)):
+                    raise ValueError('invalid named env %s for task %s' 
+                                    % (env, cu['uid']))
+                pre = ru.as_list(descr.get('pre_exec'))
+                pre.insert(0, '. %s/%s/bin/activate' % (self._pwd, env))
+                pre.insert(0, '. %s/deactivate'      % (self._pwd))
+                descr['pre_exec'] = pre
+
+
             # prep stdout/err so that we can append w/o checking for None
             cu['stdout'] = ''
             cu['stderr'] = ''
 
-            cpt = cu['description']['cpu_process_type']
-          # gpt = cu['description']['gpu_process_type']  # FIXME: use
+            cpt = descr['cpu_process_type']
+          # gpt = descr['gpu_process_type']  # FIXME: use
 
             # FIXME: this switch is insufficient for mixed units (MPI/OpenMP)
             if cpt == 'MPI': launcher = self._mpi_launcher
@@ -202,6 +217,7 @@ class Popen(AgentExecutingComponent) :
             # Create string for environment variable setting
             env_string = ''
           # env_string += '. %s/env.orig\n'                % self._pwd
+            env_string += 'export RADICAL_BASE="%s"\n'     % self._pwd
             env_string += 'export RP_SESSION_ID="%s"\n'    % self._cfg['sid']
             env_string += 'export RP_PILOT_ID="%s"\n'      % self._cfg['pid']
             env_string += 'export RP_AGENT_ID="%s"\n'      % self._cfg['aid']
@@ -248,7 +264,7 @@ prof(){
             except Exception as e:
                 msg = "Error in spawner (%s)" % e
                 self._log.exception(msg)
-                raise RuntimeError(msg)
+                raise RuntimeError (msg) from e
 
             # also add any env vars requested in the unit description
             if descr['environment']:
@@ -258,9 +274,8 @@ prof(){
             launch_script.write('\n# Environment variables\n%s\n' % env_string)
             launch_script.write('prof cu_start\n')
             launch_script.write('\n# Change to unit sandbox\ncd %s\n' % sandbox)
-            launch_script.write('prof cu_cd_done\n')
 
-            # Before the Big Bang there was nothing
+            # FIXME: cu_pre_exec should be LM specific
             if self._cfg.get('cu_pre_exec'):
                 for val in self._cfg['cu_pre_exec']:
                     launch_script.write("%s\n"  % val)
@@ -302,14 +317,14 @@ prof(){
         os.chmod(launch_script_name, st.st_mode | stat.S_IEXEC)
 
         # prepare stdout/stderr
-        stdout_file = descr.get('stdout') or 'STDOUT'
-        stderr_file = descr.get('stderr') or 'STDERR'
+        stdout_file = descr.get('stdout') or '%s.out' % cu['uid']
+        stderr_file = descr.get('stderr') or '%s.err' % cu['uid']
 
         cu['stdout_file'] = os.path.join(sandbox, stdout_file)
         cu['stderr_file'] = os.path.join(sandbox, stderr_file)
 
-        _stdout_file_h = open(cu['stdout_file'], "w")
-        _stderr_file_h = open(cu['stderr_file'], "w")
+        _stdout_file_h = open(cu['stdout_file'], 'a')
+        _stderr_file_h = open(cu['stderr_file'], 'a')
 
         self._log.info("Launching unit %s via %s in %s", cu['uid'], cmdline, sandbox)
 

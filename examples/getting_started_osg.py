@@ -4,6 +4,7 @@ __copyright__ = "Copyright 2013-2015, http://radical.rutgers.edu"
 __license__   = "MIT"
 
 import sys
+import os
 import radical.pilot as rp
 import radical.utils as ru
 
@@ -74,7 +75,7 @@ if __name__ == "__main__":
         resource = 'local.localhost'
 
     print('running on %s' % resource)
-
+    config = ru.read_json('%s/config.json' % os.path.dirname(os.path.abspath(__file__)))
     # Create a new session. No need to try/except this: if session creation
     # fails, there is not much we can do anyways...
     session = rp.Session()
@@ -105,12 +106,13 @@ if __name__ == "__main__":
 
         pdesc = rp.ComputePilotDescription()
         pdesc.resource        = resource
-        pdesc.cores           = 1
-        pdesc.project         = resources[resource]['project']
-        pdesc.queue           = resources[resource]['queue']
+        pdesc.cores           = config[resource].get('cores', 1),
+        pdesc.gpus            = config[resource].get('gpus', 0),
+        pdesc.project         = config[resource].get('project', None),
+        pdesc.queue           = config[resource].get('queue', None),
         pdesc.runtime         = RUNTIME
         pdesc.cleanup         = False
-        pdesc.access_schema   = resources[resource]['schema']
+        pdesc.access_schema   = config[resource].get('schema', None),
         pdesc.candidate_hosts = [
                               # 'MIT_CMS',
                               # 'UConn-OSG',

@@ -45,7 +45,7 @@ if __name__ == '__main__':
 
         # read the config used for resource details
         report.info('read config')
-        config = ru.read_json('%s/config.json' % os.path.dirname(__file__))
+        config = ru.read_json('%s/config.json' % os.path.dirname(os.path.abspath(__file__)))
         report.ok('>>ok\n')
 
         report.header('submit pilots')
@@ -59,10 +59,11 @@ if __name__ == '__main__':
                    'resource'      : resource,
                    'runtime'       : 15,  # pilot runtime (min)
                    'exit_on_error' : True,
-                   'project'       : config[resource]['project'],
-                   'queue'         : config[resource]['queue'],
-                   'access_schema' : config[resource]['schema'],
-                   'cores'         : config[resource]['cores'],
+                   'project'       : config[resource].get('project', None),
+                   'queue'         : config[resource].get('queue', None),
+                   'access_schema' : config[resource].get('schema', None),
+                   'cores'         : config[resource].get('cores', 1),
+                   'gpus'          : config[resource].get('gpus', 0),
                   }
 
         pdesc = rp.ComputePilotDescription(pd_init)

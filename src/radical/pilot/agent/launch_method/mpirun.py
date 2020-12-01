@@ -17,20 +17,17 @@ class MPIRun(LaunchMethod):
     #
     def __init__(self, name, cfg, session):
 
-        LaunchMethod.__init__(self, name, cfg, session)
-
         self._mpt    = False
         self._rsh    = False
         self._ccmrun = ''
         self._dplace = ''
 
+        LaunchMethod.__init__(self, name, cfg, session)
+
 
     # --------------------------------------------------------------------------
     #
     def _configure(self):
-
-        self._mpt = False
-        self._rsh = False
 
         if '_rsh' in self.name.lower():
             self._rsh = True
@@ -48,6 +45,11 @@ class MPIRun(LaunchMethod):
                                             'mpirun-openmpi-mp',  # Mac OSX
                                             'mpirun',             # general case
                                            ])
+
+        # cheyenne is special: it needs MPT behavior (no -host) even for the
+        # default mpirun (not mpirun_mpt).
+        if 'cheyenne' in self._cfg.resource.lower():
+            self._mpt = True
 
         # don't use the full pathname as the user might load a different
         # compiler / MPI library suite from his CU pre_exec that requires

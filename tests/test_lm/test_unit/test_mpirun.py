@@ -24,6 +24,7 @@ def test_configure(mocked_init, mocked_get_mpi_info, mocked_raise_on,
 
     component = MPIRun(name=None, cfg=None, session=None)
     component.name = 'MPIRun'
+    component._cfg = mock.Mock(resource='localhost')
     component._configure()
     assert('mpirun' == component.launch_command)
     assert(5 == component.mpi_version)
@@ -43,6 +44,7 @@ def test_configure_rsh(mocked_init, mocked_get_mpi_info, mocked_raise_on,
 
     component = MPIRun(name=None, cfg=None, session=None)
     component.name = 'MPIRun_rsh'
+    component._cfg = mock.Mock(resource='localhost')
     component._configure()
     assert('mpirun' == component.launch_command)
     assert(5 == component.mpi_version)
@@ -62,6 +64,7 @@ def test_configure_mpt(mocked_init, mocked_get_mpi_info, mocked_raise_on,
 
     component = MPIRun(name=None, cfg=None, session=None)
     component.name = 'MPIRun_mpt'
+    component._cfg = mock.Mock(resource='localhost')
     component._configure()
     assert('mpirun' == component.launch_command)
     assert(5 == component.mpi_version)
@@ -81,6 +84,7 @@ def test_configure_ccmrun(mocked_init, mocked_get_mpi_info, mocked_raise_on,
 
     component = MPIRun(name=None, cfg=None, session=None)
     component.name = 'MPIRun_ccmrun'
+    component._cfg = mock.Mock(resource='localhost')
     component._configure()
     assert('mpirun' == component.launch_command)
     assert(5 == component.mpi_version)
@@ -100,6 +104,7 @@ def test_configure_dplace(mocked_init, mocked_get_mpi_info, mocked_raise_on,
 
     component = MPIRun(name=None, cfg=None, session=None)
     component.name = 'MPIRun_dplace'
+    component._cfg = mock.Mock(resource='localhost')
     component._configure()
     assert('mpirun' == component.launch_command)
     assert(5 == component.mpi_version)
@@ -110,8 +115,8 @@ def test_configure_dplace(mocked_init, mocked_get_mpi_info, mocked_raise_on,
 
 # ------------------------------------------------------------------------------
 #
-@mock.patch.object(MPIRun, '__init__',   return_value=None)
-@mock.patch.object(MPIRun, '_get_mpi_info', return_value=[5,'ORTE'])
+@mock.patch.object(MPIRun, '__init__', return_value=None)
+@mock.patch.object(MPIRun, '_get_mpi_info', return_value=[5, 'ORTE'])
 @mock.patch('radical.utils.raise_on')
 def test_construct_command(mocked_init,
                            mocked_get_mpi_info,
@@ -119,15 +124,18 @@ def test_construct_command(mocked_init,
 
     test_cases = setUp('lm', 'mpirun')
 
-    component  = MPIRun(name=None, cfg=None, session=None)
-    component.name = 'MPIRun'
-    component._configure()
-
+    component = MPIRun(name=None, cfg=None, session=None)
+    component.name           = 'MPIRun'
     component._log           = ru.Logger('dummy')
-    component.mpi_flavor     = None
+    component._cfg           = mock.Mock(resource='localhost')
+    component._mpt           = False
+    component._rsh           = False
+    component._ccmrun        = ''
+    component._dplace        = ''
+
+    component._configure()
     component.launch_command = 'mpirun'
-    component._ccmrun = ''
-    component._dplace = ''
+    component.mpi_flavor     = None
 
     for unit, result in test_cases:
         command, hop = component.construct_command(unit, None)

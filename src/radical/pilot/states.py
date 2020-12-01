@@ -3,7 +3,7 @@ __copyright__ = "Copyright 2013-2014, http://radical.rutgers.edu"
 __license__   = "MIT"
 
 
-import os
+import os as _os
 
 
 # -----------------------------------------------------------------------------
@@ -39,15 +39,15 @@ _pilot_state_values = {
         DONE                   :  5,
         FAILED                 :  5,
         CANCELED               :  5}
-_pilot_state_inv   = {v: k for k, v in _pilot_state_values.items()}
+_pilot_state_inv   = {_v: _k for _k, _v in _pilot_state_values.items()}
 _pilot_state_inv_full = dict()
-for st,v in _pilot_state_values.items():
-    if v in _pilot_state_inv_full:
-        if not isinstance(_pilot_state_inv_full[v], list):
-            _pilot_state_inv_full[v] = [_pilot_state_inv_full[v]]
-        _pilot_state_inv_full[v].append(st)
+for _st,_v in _pilot_state_values.items():
+    if _v in _pilot_state_inv_full:
+        if not isinstance(_pilot_state_inv_full[_v], list):
+            _pilot_state_inv_full[_v] = [_pilot_state_inv_full[_v]]
+        _pilot_state_inv_full[_v].append(_st)
     else:
-        _pilot_state_inv_full[v] = st
+        _pilot_state_inv_full[_v] = _st
 
 
 def _pilot_state_value(s):
@@ -150,15 +150,15 @@ _unit_state_values = {
         DONE                         : 15,
         FAILED                       : 15,
         CANCELED                     : 15}
-_unit_state_inv = {v: k for k, v in _unit_state_values.items()}
+_unit_state_inv = {_v: _k for _k, _v in _unit_state_values.items()}
 _unit_state_inv_full = dict()
-for st,v in _unit_state_values.items():
-    if v in _unit_state_inv_full:
-        if not isinstance(_unit_state_inv_full[v], list):
-            _unit_state_inv_full[v] = [_unit_state_inv_full[v]]
-        _unit_state_inv_full[v].append(st)
+for _st,_v in _unit_state_values.items():
+    if _v in _unit_state_inv_full:
+        if not isinstance(_unit_state_inv_full[_v], list):
+            _unit_state_inv_full[_v] = [_unit_state_inv_full[_v]]
+        _unit_state_inv_full[_v].append(_st)
     else:
-        _unit_state_inv_full[v] = st
+        _unit_state_inv_full[_v] = _st
 
 
 def _unit_state_value(s):
@@ -251,7 +251,7 @@ def _unit_state_collapse(states):
 # backward compatibility
 #
 # pilot states
-if 'RP_ENABLE_OLD_DEFINES' in os.environ:
+if 'RP_ENABLE_OLD_DEFINES' in _os.environ:
     CANCELING              = CANCELED
     PENDING                = PMGR_LAUNCHING_PENDING
     PENDING_LAUNCH         = PMGR_LAUNCHING_PENDING

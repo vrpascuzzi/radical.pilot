@@ -1,3 +1,4 @@
+# pylint: disable=protected-access
 
 __copyright__ = "Copyright 2013-2016, http://radical.rutgers.edu"
 __license__   = "MIT"
@@ -15,7 +16,6 @@ import radical.saga            as rs
 import radical.saga.filesystem as rsfs
 import radical.utils           as ru
 
-from .... import pilot         as rp
 from ...  import states        as rps
 from ...  import constants     as rpc
 
@@ -70,7 +70,6 @@ class Default(PMGRLaunchingComponent):
 
         self._mod_dir       = os.path.dirname(os.path.abspath(__file__))
         self._root_dir      = "%s/../../"   % self._mod_dir
-        self._conf_dir      = "%s/configs/" % self._root_dir
 
         self.register_input(rps.PMGR_LAUNCHING_PENDING,
                             rpc.PMGR_LAUNCHING_QUEUE, self.work)
@@ -208,9 +207,9 @@ class Default(PMGRLaunchingComponent):
             # the directory if it does not yet exist.
 
             # url used for cache (sandbox url w/o path)
-            tmp      = rs.Url(pilot['pilot_sandbox'])
-            tmp.path = '/'
-            key = str(tmp)
+            fs_url      = rs.Url(pilot['pilot_sandbox'])
+            fs_url.path = '/'
+            key         = str(fs_url)
 
             self._log.debug("rs.file.Directory ('%s')", key)
 
@@ -219,7 +218,7 @@ class Default(PMGRLaunchingComponent):
                     fs = self._saga_fs_cache[key]
 
                 else:
-                    fs = rsfs.Directory(key, session=self._session)
+                    fs = rsfs.Directory(fs_url, session=self._session)
                     self._saga_fs_cache[key] = fs
 
             fs.copy(src, tgt, flags=flags)
@@ -280,16 +279,16 @@ class Default(PMGRLaunchingComponent):
                 # Define and open the staging directory for the pilot
 
                 # url used for cache (sandbox url w/o path)
-                tmp      = rs.Url(pilot['pilot_sandbox'])
-                tmp.path = '/'
-                key = str(tmp)
+                fs_url      = rs.Url(pilot['pilot_sandbox'])
+                fs_url.path = '/'
+                key         = str(fs_url)
 
                 with self._cache_lock:
                     if key in self._saga_fs_cache:
                         fs = self._saga_fs_cache[key]
 
                     else:
-                        fs = rsfs.Directory(key, session=self._session)
+                        fs = rsfs.Directory(fs_url, session=self._session)
                         self._saga_fs_cache[key] = fs
 
                 fs.copy(src, tgt, flags=flags)
@@ -331,12 +330,10 @@ class Default(PMGRLaunchingComponent):
         # we don't want to lock our members all the time.  For that reason we
         # use a copy of the pilots_tocheck list and iterate over that, and only
         # lock other members when they are manipulated.
-
         tc = rs.job.Container()
         with self._pilots_lock, self._check_lock:
 
             for pid in self._checking:
-
                 tc.add(self._pilots[pid]['job'])
 
         states = tc.get_states()
@@ -355,7 +352,7 @@ class Default(PMGRLaunchingComponent):
             for pid in self._checking:
 
                 state = self._pilots[pid]['job'].state
-                self._log.debug('saga job state: %s %s', pid, state)
+                self._log.debug('saga job state: %s %s %s', pid, self._pilots[pid]['job'],  state)
 
                 if state in [rs.job.DONE, rs.job.FAILED, rs.job.CANCELED]:
                     pilot = self._pilots[pid]['pilot']
@@ -466,7 +463,7 @@ class Default(PMGRLaunchingComponent):
                     raise ValueError('unknown pilot %s' % pid)
 
                 pilot = self._pilots[pid]['pilot']
-                if pilot['state'] not in rp.FINAL:
+                if pilot['state'] not in rps.FINAL:
                     self._log.debug('killing pilots: alive %s', pid)
                     alive_pids.append(pid)
                 else:
@@ -507,7 +504,7 @@ class Default(PMGRLaunchingComponent):
                     if 'resource_details' in pilot:
                         del(pilot['resource_details'])
 
-                    if pilot['state'] in rp.FINAL:
+                    if pilot['state'] in rps.FINAL:
                         continue
 
                     self._log.debug('plan cancellation of %s : %s', pilot, job)
@@ -749,15 +746,16 @@ class Default(PMGRLaunchingComponent):
 
         fs_endpoint = rcfg['filesystem_endpoint']
         fs_url      = rs.Url(fs_endpoint)
+        key         = str(fs_url)
 
         self._log.debug("rs.file.Directory ('%s')", fs_url)
 
         with self._cache_lock:
-            if fs_url in self._saga_fs_cache:
-                fs = self._saga_fs_cache[fs_url]
+            if key in self._saga_fs_cache:
+                fs = self._saga_fs_cache[key]
             else:
                 fs = rsfs.Directory(fs_url, session=self._session)
-                self._saga_fs_cache[fs_url] = fs
+                self._saga_fs_cache[key] = fs
 
         tar_rem      = rs.Url(fs_url)
         tar_rem.path = "%s/%s" % (session_sandbox, tar_name)
@@ -823,25 +821,16 @@ class Default(PMGRLaunchingComponent):
 
         jc.run()
 
-        # we assume here that the tasks arrive in the same order as the job
-        # descriptions.  For uniform sets of pilots the order does not matter
-        # much though.  Either way, this needs confirming on SAGA level
-        # FIXME
-        for j,jd in zip(jc.get_tasks(), jd_list):
+        # Order of tasks in `rs.job.Container().tasks` is not changing over the
+        # time, thus it's able to iterate over it and other list(s) all together
+        for j, pilot in zip(jc.get_tasks(), pilots):
 
             # do a quick error check
             if j.state == rs.FAILED:
                 self._log.error('%s: %s : %s : %s', j.id, j.state, j.stderr, j.stdout)
-                raise RuntimeError("SAGA Job state is FAILED. (%s)" % jd.name)
+                raise RuntimeError("SAGA Job state is FAILED. (%s)" % j.name)
 
-            pilot = None
-            pid   = jd.name
-            for p in pilots:
-                if p['uid'] == pid:
-                    pilot = p
-                    break
-
-            assert(pilot)
+            pid = pilot['uid']
 
             # Update the Pilot's state to 'PMGR_ACTIVE_PENDING' if SAGA job
             # submission was successful.  Since the pilot leaves the scope of
@@ -888,6 +877,7 @@ class Default(PMGRLaunchingComponent):
         runtime         = pilot['description']['runtime']
         app_comm        = pilot['description']['app_comm']
         queue           = pilot['description']['queue']
+        job_name        = pilot['description']['job_name']
         project         = pilot['description']['project']
         cleanup         = pilot['description']['cleanup']
         candidate_hosts = pilot['description']['candidate_hosts']
@@ -908,12 +898,11 @@ class Default(PMGRLaunchingComponent):
         pre_bootstrap_1         = rcfg.get('pre_bootstrap_1', [])
         python_interpreter      = rcfg.get('python_interpreter')
         task_launch_method      = rcfg.get('task_launch_method')
-        rp_version              = rcfg.get('rp_version',          DEFAULT_RP_VERSION)
+        rp_version              = rcfg.get('rp_version')
         virtenv_mode            = rcfg.get('virtenv_mode',        DEFAULT_VIRTENV_MODE)
         virtenv                 = rcfg.get('virtenv',             default_virtenv)
         cores_per_node          = rcfg.get('cores_per_node', 0)
         gpus_per_node           = rcfg.get('gpus_per_node',  0)
-        self._log.debug('=== gpus_per_node 0: %d', gpus_per_node)
         lfs_path_per_node       = rcfg.get('lfs_path_per_node', None)
         lfs_size_per_node       = rcfg.get('lfs_size_per_node',  0)
         python_dist             = rcfg.get('python_dist')
@@ -926,6 +915,7 @@ class Default(PMGRLaunchingComponent):
         cu_post_exec            = rcfg.get('cu_post_exec')
         export_to_cu            = rcfg.get('export_to_cu')
         mandatory_args          = rcfg.get('mandatory_args', [])
+        system_architecture     = rcfg.get('system_architecture', {})
         saga_jd_supplement      = rcfg.get('saga_jd_supplement', {})
 
         self._log.debug(cores_per_node)
@@ -965,31 +955,17 @@ class Default(PMGRLaunchingComponent):
         if not agent_config:
             agent_config = rc_agent_config
 
-        if isinstance(agent_config, dict):
+        if not job_name:
+            job_name = pid
 
+        if isinstance(agent_config, dict):
             # use dict as is
             agent_cfg = agent_config
 
         elif isinstance(agent_config, str):
-            try:
-                # interpret as a config name
-                agent_cfg_file = os.path.join(self._conf_dir, "agent_%s.json" % agent_config)
-
-                self._log.info("Read agent config file: %s",  agent_cfg_file)
-                agent_cfg = ru.Config(path=agent_cfg_file)
-
-                # allow for user level overload
-                user_cfg_file = '%s/.radical/pilot/config/%s' \
-                              % (os.environ['HOME'], os.path.basename(agent_cfg_file))
-
-                if os.path.exists(user_cfg_file):
-                    self._log.info("merging user config: %s" % user_cfg_file)
-                    user_cfg = ru.read_json(user_cfg_file)
-                    ru.dict_merge (agent_cfg, user_cfg, policy='overwrite')
-
-            except Exception as e:
-                self._log.exception("Error reading agent config file: %s" % e)
-                raise
+            agent_cfg = ru.Config('radical.pilot',
+                                  category='agent',
+                                  name=agent_config)
 
         else:
             # we can't handle this type
@@ -1031,11 +1007,6 @@ class Default(PMGRLaunchingComponent):
         #
         #   local: # needs sdist staging
         #       tar zxf $sdist.tgz
-        #       pip install -t $VIRTENV/rp_install $sdist/
-        #       export PYTHONPATH=$VIRTENV/rp_install:$PYTHONPATH
-        #
-        #   debug: # needs sdist staging
-        #       tar zxf $sdist.tgz
         #       pip install -t $SANDBOX/rp_install $sdist/
         #       export PYTHONPATH=$SANDBOX/rp_install:$PYTHONPATH
         #
@@ -1049,6 +1020,7 @@ class Default(PMGRLaunchingComponent):
         #   create  : use    if ve exists, otherwise create, then use
         #   use     : use    if ve exists, otherwise error,  then exit
         #   recreate: delete if ve exists, otherwise create, then use
+        #   local   : use the client virtualenv (assumes same FS)
         #
         # examples   :
         #   virtenv@v0.20
@@ -1072,6 +1044,11 @@ class Default(PMGRLaunchingComponent):
         # A rp_version which does not adhere to the
         # above syntax is ignored, and the fallback stage@local
         # is used.
+
+
+        if not rp_version:
+            if virtenv_mode == 'local': rp_version = 'installed'
+            else                      : rp_version = DEFAULT_RP_VERSION
 
         if not rp_version.startswith('@') and \
                rp_version not in ['installed', 'local', 'release']:
@@ -1114,13 +1091,18 @@ class Default(PMGRLaunchingComponent):
             if virtenv_mode != 'private':
                 cleanup = cleanup.replace('v', '')
 
-        # add dists to staging files, if needed
-        if rp_version in ['local']:
-            sdist_names = [ru.sdist_name, rs.sdist_name, self._rp_sdist_name]
-            sdist_paths = [ru.sdist_path, rs.sdist_path, self._rp_sdist_path]
-        else:
-            sdist_names = list()
-            sdist_paths = list()
+        # use local VE ?
+        if virtenv_mode == 'local':
+            if os.environ.get('VIRTUAL_ENV'):
+                python_dist = 'default'
+                virtenv     = os.environ['VIRTUAL_ENV']
+            elif os.environ.get('CONDA_PREFIX'):
+                python_dist = 'anaconda'
+                virtenv     = os.environ['CONDA_PREFIX']
+            else:
+                # we can't use local
+                self._log.error('virtenv_mode is local, no local env found')
+                raise ValueError('no local env found')
 
         # if cores_per_node is set (!= None), then we need to
         # allocation full nodes, and thus round up
@@ -1132,15 +1114,24 @@ class Default(PMGRLaunchingComponent):
         # if gpus_per_node is set (!= None), then we need to
         # allocation full nodes, and thus round up
         if gpus_per_node:
-            self._log.debug('=== gpus_per_node 1: %d', gpus_per_node)
             gpus_per_node = int(gpus_per_node)
             number_gpus   = int(gpus_per_node *
                             math.ceil(float(number_gpus) / gpus_per_node))
-            self._log.debug('=== gpus_per_node 2: %d', gpus_per_node)
 
         # set mandatory args
         bootstrap_args  = ""
-        bootstrap_args += " -d '%s'" % ':'.join(sdist_names)
+
+        # add dists to staging files, if needed:
+        # don't stage on `rp_version==installed` or `virtenv_mode==local`
+        if rp_version   == 'installed' or \
+           virtenv_mode == 'local'     :
+            sdist_names = list()
+            sdist_paths = list()
+        else:
+            sdist_names = [ru.sdist_name, rs.sdist_name, self._rp_sdist_name]
+            sdist_paths = [ru.sdist_path, rs.sdist_path, self._rp_sdist_path]
+            bootstrap_args += " -d '%s'" % ':'.join(sdist_names)
+
         bootstrap_args += " -p '%s'" % pid
         bootstrap_args += " -s '%s'" % sid
         bootstrap_args += " -m '%s'" % virtenv_mode
@@ -1164,6 +1155,7 @@ class Default(PMGRLaunchingComponent):
             bootstrap_args += " -w '%s'" % arg
 
         agent_cfg['owner']               = 'agent.0'
+        agent_cfg['resource']            = resource
         agent_cfg['cores']               = number_cores
         agent_cfg['gpus']                = number_gpus
         agent_cfg['spawner']             = agent_spawner
@@ -1234,30 +1226,34 @@ class Default(PMGRLaunchingComponent):
 
                 for sdist in sdist_paths:
                     base = os.path.basename(sdist)
-                    ret['ft'].append({'src': sdist,
-                                      'tgt': '%s/%s' % (session_sandbox, base),
-                                      'rem': False})
+                    ret['ft'].append({
+                        'src': sdist,
+                        'tgt': '%s/%s' % (session_sandbox, base),
+                        'rem': False
+                    })
 
                 # Copy the bootstrap shell script.
                 bootstrapper_path = os.path.abspath("%s/agent/%s"
                                   % (self._root_dir, BOOTSTRAPPER_0))
                 self._log.debug("use bootstrapper %s", bootstrapper_path)
 
-                ret['ft'].append({'src': bootstrapper_path,
-                                  'tgt': '%s/%s' % (session_sandbox, BOOTSTRAPPER_0),
-                                  'rem': False})
+                ret['ft'].append({
+                    'src': bootstrapper_path,
+                    'tgt': '%s/%s' % (session_sandbox, BOOTSTRAPPER_0),
+                    'rem': False
+                })
 
                 # Some machines cannot run pip due to outdated CA certs.
                 # For those, we also stage an updated certificate bundle
                 # TODO: use booleans all the way?
                 if stage_cacerts:
 
-                    cc_name = 'cacert.pem.gz'
-                    cc_path = os.path.abspath("%s/agent/%s" % (self._root_dir, cc_name))
-                    self._log.debug("use CAs %s", cc_path)
+                    certs = 'cacert.pem.gz'
+                    cpath = os.path.abspath("%s/agent/%s" % (self._root_dir, certs))
+                    self._log.debug("use CAs %s", cpath)
 
-                    ret['ft'].append({'src': cc_path,
-                                      'tgt': '%s/%s' % (session_sandbox, cc_name),
+                    ret['ft'].append({'src': cpath,
+                                      'tgt': '%s/%s' % (session_sandbox, certs),
                                       'rem': False})
 
                 self._sandboxes[resource] = True
@@ -1273,7 +1269,7 @@ class Default(PMGRLaunchingComponent):
         else:
             bootstrap_tgt = '%s/%s' % ('.', BOOTSTRAPPER_0)
 
-        jd.name                  = pid
+        jd.name                  = job_name
         jd.executable            = "/bin/bash"
         jd.arguments             = ['-l %s %s' % (bootstrap_tgt, bootstrap_args)]
         jd.working_directory     = pilot_sandbox
@@ -1289,12 +1285,21 @@ class Default(PMGRLaunchingComponent):
         jd.queue                 = queue
         jd.candidate_hosts       = candidate_hosts
         jd.environment           = dict()
+        jd.system_architecture   = system_architecture
 
         # we set any saga_jd_supplement keys which are not already set above
         for key, val in saga_jd_supplement.items():
             if not jd[key]:
                 self._log.debug('supplement %s: %s', key, val)
                 jd[key] = val
+
+        # set saga job description attribute based on env variable(s)
+        if os.environ.get('RADICAL_SAGA_SMT'):
+            try:
+                jd.system_architecture['smt'] = \
+                    int(os.environ['RADICAL_SAGA_SMT'])
+            except Exception as e:
+                self._log.debug('SAGA SMT not set: %s' % e)
 
         if self._prof.enabled:
             jd.environment['RADICAL_PROFILE'] = 'TRUE'
@@ -1325,7 +1330,7 @@ class Default(PMGRLaunchingComponent):
 
             if stage_cacerts:
                 jd.file_transfer.extend([
-                    'site:%s/%s > %s' % (session_sandbox, cc_name, cc_name)
+                    'site:%s/%s > %s' % (session_sandbox, certs, certs)
                 ])
 
         self._log.debug("Bootstrap command line: %s %s", jd.executable, jd.arguments)
