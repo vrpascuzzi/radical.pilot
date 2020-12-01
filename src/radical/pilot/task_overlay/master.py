@@ -357,10 +357,10 @@ class Master(rpu.Component):
         terminate all workers
         '''
 
-        if not uids:
-            uids = self._workers.keys()
+        if uids: uids = ru.as_list(uids)
+        else   : uids = self._workers.keys()
 
-        for uid in ru.as_list(uids):
+        for uid in uids:
             self.publish(rpc.CONTROL_PUBSUB, {'cmd': 'worker_terminate',
                                               'arg': {'uid': uid}})
 
