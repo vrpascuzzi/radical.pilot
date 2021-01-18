@@ -55,8 +55,12 @@ class Agent_0(rpu.Worker):
         self._final_cause = None
         self._lrms        = None
 
-        # this better be on a shared FS!
-        cfg['workdir']    = self._pwd
+        # this is the earliest point to sync bootstrap and agent profiles
+        prof = ru.Profiler(ns='radical.pilot', name='agent.0')
+        prof.prof('hostname', uid=cfg.pid, msg=ru.get_hostname())
+
+        # connect to MongoDB for state push/pull
+        self._connect_db()
 
         # configure ResourceManager before component startup, as components need
         # ResourceManager information for function (scheduler, executor)
