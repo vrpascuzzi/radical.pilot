@@ -3,6 +3,8 @@
 # Unset functions/aliases of commands that will be used during bootstrap as
 # these custom functions can break assumed/expected behavior
 export PS1='#'
+export LC_NUMERIC="C"
+
 unset PROMPT_COMMAND
 unset -f cd ls uname pwd date bc cat echo grep
 
@@ -188,7 +190,7 @@ profile_event(){
     event=$1
     msg=$2
     ts=$(date '+%s')
-    printf "%.4f,$event,bootstrap_0,$$,$PILOT_ID,PMGR_ACTIVE_PENDING,$msg\n" \
+    printf "%.6f,$event,bootstrap_0,$$,$PILOT_ID,PMGR_ACTIVE_PENDING,$msg\n" \
            $ts >> bootstrap_0.prof
 }
 
@@ -202,30 +204,6 @@ cat > ./gtod <<EOT
 $(which radical-gtod)
 EOT
 
-cat > ./prof <<EOT
-#!/bin/sh
-
-event="\$1"; shift
-msg="\$*"
-
-test -z "\$RADICAL_PILOT_PROFILE\$RADICAL_PROFILE" && exit 0
-test -z "\$RP_PROF_TGT"                            && exit 0
-
-now=\$(\$RP_GTOD)           # time of event as seconds since epoch
-event="\$event"             # event ID
-comp="unit_script"          # component which recorded the event
-tid="\$PPID"                # uid of thread involved
-uid="\$RP_UNIT_ID"          # uid of entity involved
-state="AGENT_EXECUTING"     # state of entity involved 
-
-printf "%.4f,%s,%s,%s,%s,%s,%s\n" \
-       "\$now" "\$event" "\$comp" "\$tid" "\$uid" "\$state" "\$msg" \
-       >> "\$RP_PROF_TGT"
-
-EOT
-
-chmod 0755 ./gtod
-chmod 0755 ./prof
 }
 
 
@@ -1847,7 +1825,7 @@ fi
 create_deactivate
 
 # start the master agent instance (zero)
-profile_event 'sync_rel' 'agent.0'
+profile_event 'bootstrap_0_ok'
 if test -z "$CCM"; then
     ./bootstrap_2.sh 'agent.0'    \
                    1> agent.0.bootstrap_2.out \
@@ -1874,13 +1852,13 @@ do
             waitfor 1 30 "kill -0  $AGENT_PID"
             test "$?" = 0 || break
 
-            profile_event 'sigkill' 
+            profile_event 'sigkill'
             echo "send SIGKILL to $AGENT_PID ($$)"
             kill  -9 $AGENT_PID
         fi
     else
         echo
-        profile_event 'agent_gone' 
+        profile_event 'agent_gone'
         echo "agent $AGENT_PID is gone"
         break
     fi
