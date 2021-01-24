@@ -264,7 +264,8 @@
         "gpus_per_node"               : 6,
         "sockets_per_node"            : 2,
         "system_architecture"         : {"smt": 4,
-                                         "options": ["gpumps"]}
+                                         "options": ["gpumps"]},
+        "dvm_count"                   : 1
     },
 
     "summit_flux": {
@@ -323,6 +324,7 @@
         "gpus_per_node"               : 1,
         "sockets_per_node"            : 2,
         "system_architecture"         : {"smt": 4,
+                                         "options": ["gpumps"]}
                                          "options": ["gpumps"]}
     }
 }
