@@ -592,7 +592,7 @@ class Worker(rpu.Component):
         try:
             while not self._term.is_set():
 
-                self._log.debug('=== waiting for results')
+              # self._log.debug('=== waiting for results')
 
                 try:
                     res = self._result_queue.get(timeout=0.1)
@@ -661,7 +661,7 @@ class Worker(rpu.Component):
             self._term.set()
 
         elif msg['cmd'] == 'worker_terminate':
-            if msg['arg']['uid'] == self._uid:
+            if msg['arg']['uid'] == self._cfg['wid']:
                 self._log.debug('got terminate msg: %s: %s', topic, msg)
                 self._term.set()
 
