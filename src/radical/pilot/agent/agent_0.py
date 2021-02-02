@@ -178,14 +178,14 @@ class Agent_0(rpu.Worker):
 
         # some of the bridge addresses also need to be exposed to the workload
         if app_comm:
-            if 'unit_environment' not in self._cfg:
-                self._cfg['unit_environment'] = dict()
+            if 'task_environment' not in self._cfg:
+                self._cfg['task_environment'] = dict()
             for ac in app_comm:
                 if ac not in self._cfg['bridges']:
                     raise RuntimeError('missing app_comm %s' % ac)
-                self._cfg['unit_environment']['RP_%s_IN' % ac.upper()] = \
+                self._cfg['task_environment']['RP_%s_IN' % ac.upper()] = \
                         self._cfg['bridges'][ac]['addr_in']
-                self._cfg['unit_environment']['RP_%s_OUT' % ac.upper()] = \
+                self._cfg['task_environment']['RP_%s_OUT' % ac.upper()] = \
                         self._cfg['bridges'][ac]['addr_out']
 
 
@@ -194,7 +194,7 @@ class Agent_0(rpu.Worker):
     def initialize(self):
 
         # registers the staging_input_queue as this is what we want to push
-        # units to
+        # tasks to
         self.register_output(rps.AGENT_STAGING_INPUT_PENDING,
                              rpc.AGENT_STAGING_INPUT_QUEUE)
 
@@ -394,7 +394,7 @@ class Agent_0(rpu.Worker):
                 agent_cmd = {
                     'uid'              : sa,
                     'slots'            : slots,
-                    'unit_sandbox_path': self._pwd,
+                    'task_sandbox_path': self._pwd,
                     'description'      : {'cpu_processes'    : 1,
                                           'gpu_process_type' : 'posix',
                                           'gpu_thread_type'  : 'posix',
@@ -484,7 +484,7 @@ class Agent_0(rpu.Worker):
         # Check if there's a command waiting
         # FIXME: this pull should be done by the update worker, and commands
         #        should then be communicated over the command pubsub
-        # FIXME: commands go to pmgr, umgr, session docs
+        # FIXME: commands go to pmgr, tmgr, session docs
         # FIXME: check if pull/wipe are atomic
         # FIXME: long runnign commands can time out on hb
         retdoc = self._dbs._c.find_and_modify(
@@ -523,9 +523,9 @@ class Agent_0(rpu.Worker):
 
                 return False  # we are done
 
-            elif cmd == 'cancel_units':
-                self._log.info('cancel_units cmd')
-                self.publish(rpc.CONTROL_PUBSUB, {'cmd' : 'cancel_units',
+            elif cmd == 'cancel_tasks':
+                self._log.info('cancel_tasks cmd')
+                self.publish(rpc.CONTROL_PUBSUB, {'cmd' : 'cancel_tasks',
                                                   'arg' : arg})
             else:
                 self._log.warn('could not interpret cmd "%s" - ignore', cmd)
