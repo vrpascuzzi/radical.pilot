@@ -67,52 +67,52 @@ class Flux(AgentSchedulingComponent):
 
     # --------------------------------------------------------------------------
     #
-    def work(self, units):
+    def work(self, tasks):
 
         # overload the base class work method
 
         from flux import job as flux_job
 
-        self.advance(units, rps.AGENT_SCHEDULING, publish=True, push=False)
+        self.advance(tasks, rps.AGENT_SCHEDULING, publish=True, push=False)
 
-        for unit in ru.as_list(units):
+        for task in ru.as_list(tasks):
 
             try:
 
-                ru.write_json('/tmp/unit.json', unit)
+                ru.write_json('/tmp/task.json', task)
 
               # # FIXME: transfer from executor
               # self._cu_environment = self._populate_cu_environment()
 
-                uid  = unit['uid']
-                cud  = unit['description']
-                sbox = unit['unit_sandbox_path']
+                uid  = task['uid']
+                td   = task['description']
+                sbox = task['task_sandbox_path']
 
                 ru.rec_makedir(sbox)
 
-                spec = self._task_to_flux(uid, cud, sbox)
+                spec = self._task_to_flux(uid, td, sbox)
 
                 jid = flux_job.submit(self._flux, spec, debug=True)
-                unit['flux_id']     = jid
-                unit['flux_states'] = list()
+                task['flux_id']     = jid
+                task['flux_states'] = list()
 
                 # publish without state changes - those are retroactively applied
                 # based on flux event timestamps.
                 # TODO: apply some bulking, submission is not really fast.
                 #       But at the end performance is determined by flux now, so
                 #       communication only affects timelyness of state updates.
-                self._q.put(unit)
+                self._q.put(task)
 
             except Exception as e:
                 self._log.exception('flux submission failed')
-                unit['target_state'] = rps.FAILED
-                self.advance(unit, rps.AGENT_STAGING_OUTPUT_PENDING,
+                task['target_state'] = rps.FAILED
+                self.advance(task, rps.AGENT_STAGING_OUTPUT_PENDING,
                                    publish=True, push=True)
 
 
     # --------------------------------------------------------------------------
     #
-    def _task_to_flux(self, uid, cud, sbox):
+    def _task_to_flux(self, uid, td, sbox):
         '''
 
         The translator between RP and FLUX job description supports the
@@ -128,19 +128,19 @@ class Flux(AgentSchedulingComponent):
             - CPU_PROCESS_TYPE      : ?
             - CPU_THREADS           : resources.slot.core.count
             - CPU_THREAD_TYPE       : ?
-            
+
             - GPU_PROCESSES         : resource.slot.gpu.count
             - GPU_PROCESS_TYPE      : ?
             - GPU_THREADS           : -/-
             - GPU_THREAD_TYPE       : -/-
-           
+
             - LFS_PER_PROCESS       : ?
             - MEM_PER_PROCESS       : ?
-          
+
             - INPUT_STAGING         : n/a
-            - OUTPUT_STAGING        : n/a 
-            - PRE_EXEC              : n/a 
-            - POST_EXEC             : n/a 
+            - OUTPUT_STAGING        : n/a
+            - PRE_EXEC              : n/a
+            - POST_EXEC             : n/a
             - KERNEL                : RP specific
             - CLEANUP               : n/a
             - PILOT                 : RP specific
@@ -159,12 +159,12 @@ class Flux(AgentSchedulingComponent):
         env['RP_PILOT_ID']       = self._cfg['pid']
         env['RP_AGENT_ID']       = self._cfg['aid']
         env['RP_SPAWNER_ID']     = self.uid
-        env['RP_UNIT_ID']        = uid
-        env['RP_UNIT_NAME']      = cud.get('name')
+        env['RP_TASK_ID']        = uid
+        env['RP_TASK_NAME']      = td.get('name')
         env['RP_GTOD']           = self.gtod
         env['RP_PROF']           = self.prof
       # env['RP_TMP']            = self._cu_tmp
-        env['RP_UNIT_SANDBOX']   = sbox
+        env['RP_TASK_SANDBOX']   = sbox
         env['RP_PILOT_SANDBOX']  = self._pwd
         env['RP_PILOT_STAGING']  = self._pwd
 
@@ -181,12 +181,12 @@ class Flux(AgentSchedulingComponent):
         # FLUX does not support stdio redirection (?), so we wrap the
         # command into a small shell script to obtain that.  That also
         # includes pre-exec and post-exec.
-        # NOTE:  this implies that pre- and post-exec are executed 
+        # NOTE:  this implies that pre- and post-exec are executed
         #        *per rank*, which can put significant strain on the
-        #        file system.  
+        #        file system.
         # FIXME: use env isolation
         # FLUX?: stdout / stderr
-        # FLUX?: pre_exec / post_exec 
+        # FLUX?: pre_exec / post_exec
 
         script = '%s/%s.sh' % (sbox, uid)
         with open(script, 'w') as fout:
@@ -196,18 +196,18 @@ class Flux(AgentSchedulingComponent):
             fout.write('cd %s\n' % sbox)
 
             fout.write('\n# pre exec\n\n')
-            for pe in cud['pre_exec']:
+            for pe in td['pre_exec']:
                 fout.write('%s\n' % pe)
 
             fout.write('\n# exec\n\n')
-          # fout.write('%s %s > %s.out 2> %s.err\n' 
-          #           % (cud['executable'], ' '.join(cud['arguments']),
+          # fout.write('%s %s > %s.out 2> %s.err\n'
+          #           % (td['executable'], ' '.join(td['arguments']),
           #              uid, uid))
-            fout.write('%s %s\n' % (cud['executable'],
-                                    ' '.join(cud['arguments'])))
+            fout.write('%s %s\n' % (td['executable'],
+                                    ' '.join(td['arguments'])))
 
             fout.write('\n# post exec\n\n')
-            for pe in cud['post_exec']:
+            for pe in td['post_exec']:
                 fout.write('%s\n' % pe)
 
         spec = {'version'  : 1,
@@ -216,19 +216,19 @@ class Flux(AgentSchedulingComponent):
                     'count'  : 1,
                     'with'   : [{
                         'type' : 'slot',
-                        'count': cud['cpu_processes'],
+                        'count': td['cpu_processes'],
                         'label': 'task_slot',
                         'with' : [{
                             'type' : 'core',
-                            'count': cud['cpu_threads']
+                            'count': td['cpu_threads']
                           # }, {
                           # 'type' : 'gpu',
-                          # 'count': cud['gpu_processes']
+                          # 'count': td['gpu_processes']
                             }]
                         }]
                     }],
                 'tasks': [{
-                    'command': ['/bin/sh', script], 
+                    'command': ['/bin/sh', script],
                     'slot'   : 'task_slot',
                     'count'  : {
                         'per_slot': 1
@@ -245,22 +245,22 @@ class Flux(AgentSchedulingComponent):
 
         ru.write_json(spec, '%s/%s.flux' % (sbox, uid))
         js = flux_job.JobspecV1(tasks=spec['tasks'],
-                                resources=spec['resources'], 
-                                version=spec['version'], 
+                                resources=spec['resources'],
+                                version=spec['version'],
                                 attributes=spec['attributes'])
 
         # FLUX: not part of V1 spec?
         # FLUX: does not work?
         js.stdout = '%s/%s.out' % (sbox, uid)
         js.stderr = '%s/%s.err' % (sbox, uid)
-       
+
       # import pprint
       # self._log.debug('=== js: %s', pprint.pformat(js.dumps()))
       #
       # # do a sanity check
-      # cud2 = self._flux_to_task(js)
-      # ru.write_json('cud_1.json', cud)
-      # ru.write_json('cud_2.json', cud2)
+      # td2 = self._flux_to_task(js)
+      # ru.write_json('cud_1.json', td)
+      # ru.write_json('cud_2.json', td2)
 
         return js
 
@@ -269,16 +269,16 @@ class Flux(AgentSchedulingComponent):
     #
     def _flux_to_task(self, js):
 
-        from ...compute_unit_description import ComputeUnitDescription
-        cud = ComputeUnitDescription()
+        from ...task_description import TaskDescription
+        td = TaskDescription()
 
-        cud.executable  = js.tasks[0]['command'][0]
-        cud.arguments   = js.tasks[0]['command'][1:]
-        cud.environment = js.environment
-        cud.sandbox     = js.cwd
-        cud.stdout      = js.stdout 
-        cud.stderr      = js.stderr 
-        cud.stderr      = js.stderr 
+        td.executable  = js.tasks[0]['command'][0]
+        td.arguments   = js.tasks[0]['command'][1:]
+        td.environment = js.environment
+        td.sandbox     = js.cwd
+        td.stdout      = js.stdout
+        td.stderr      = js.stderr
+        td.stderr      = js.stderr
 
         import pprint
         n_procs   = 1
@@ -289,39 +289,39 @@ class Flux(AgentSchedulingComponent):
             elif o['type'] == 'core': n_threads = c
             elif o['type'] == 'gpu' : n_gpus    = c
 
-        cud.cpu_processes = n_procs
-        cud.cpu_threads   = n_threads
-        cud.gpu_processes = n_gpus
+        td.cpu_processes = n_procs
+        td.cpu_threads   = n_threads
+        td.gpu_processes = n_gpus
 
-        return cud.as_dict()
+        return td.as_dict()
 
   # # --------------------------------------------------------------------------
   # #
-  # def _populate_cu_environment(self):
+  # def _populate_task_environment(self):
   #
   #     import tempfile
   #
   #     self.gtod   = "%s/gtod" % self._pwd
   #     self.tmpdir = tempfile.gettempdir()
   #
-  #     # if we need to transplant any original env into the CU, we dig the
+  #     # if we need to transplant any original env into the Task, we dig the
   #     # respective keys from the dump made by bootstrap_0.sh
-  #     self._env_cu_export = dict()
-  #     if self._cfg.get('export_to_cu'):
+  #     self._env_task_export = dict()
+  #     if self._cfg.get('export_to_task'):
   #         with open('env.orig', 'r') as f:
   #             for line in f.readlines():
   #                 if '=' in line:
   #                     k,v = line.split('=', 1)
   #                     key = k.strip()
   #                     val = v.strip()
-  #                     if key in self._cfg['export_to_cu']:
-  #                         self._env_cu_export[key] = val
+  #                     if key in self._cfg['export_to_task']:
+  #                         self._env_task_export[key] = val
   #
   #
   # # --------------------------------------------------------------------------
   # #
-  # def _populate_cu_environment(self):
-  #     """Derive the environment for the cu's from our own environment."""
+  # def _populate_task_environment(self):
+  #     """Derive the environment for the t's from our own environment."""
   #
   #     # Get the environment of the agent
   #     new_env = copy.deepcopy(os.environ)

@@ -92,7 +92,7 @@ class Flux(AgentExecutingComponent) :
         cmd = msg['cmd']
       # arg = msg['arg']
 
-        if cmd == 'cancel_units':
+        if cmd == 'cancel_tasks':
 
             # FIXME: clarify how to cancel tasks in Flux
             pass
@@ -102,9 +102,9 @@ class Flux(AgentExecutingComponent) :
 
     # --------------------------------------------------------------------------
     #
-    def work(self, units):
+    def work(self, tasks):
 
-        self._task_q.put(ru.as_list(units))
+        self._task_q.put(ru.as_list(tasks))
 
         if self._term.is_set():
             self._log.warn('threads triggered termination')
