@@ -197,6 +197,54 @@ profile_event(){
 
 # ------------------------------------------------------------------------------
 #
+# If profiling is enabled, compile our little gtod app and take the first time
+#
+create_gtod()
+{
+    tmp=`date '+%s.%N' | grep N`
+    if test "$?" = 0
+    then
+        if ! contains "$tmp" '%'
+        then
+            # we can use the system tool
+            echo "#!/bin/sh"       > ./gtod
+            echo "date '+%s.%6N'" >> ./gtod
+        fi
+    else
+        shell=/bin/sh
+        test -x '/bin/bash' && shell=/bin/bash
+
+        echo "#!$SHELL"                                > ./gtod
+        echo "export LC_NUMERIC=C"                    >> ./gtod
+        echo "if test -z \"\$EPOCHREALTIME\""         >> ./gtod
+        echo "then"                                   >> ./gtod
+        echo "  awk 'BEGIN {srand(); print srand()}'" >> ./gtod
+        echo "else"                                   >> ./gtod
+        echo "  echo \${EPOCHREALTIME:0:20}"          >> ./gtod
+        echo "fi"                                     >> ./gtod
+    fi
+
+    chmod 0755 ./gtod
+
+    # initialize profile
+    PROFILE="bootstrap_0.prof"
+    now=$(./gtod)
+    echo "#time,event,comp,thread,uid,state,msg" > "$PROFILE"
+
+    ip=$(ip addr \
+         | grep 'state UP' -A2 \
+         | grep 'inet' \
+         | awk '{print $2}' \
+         | cut -f1 -d'/')
+    printf "%.4f,%s,%s,%s,%s,%s,%s\n" \
+        "$now" "sync_abs" "bootstrap_0" "MainThread" "$PILOT_ID" \
+        "PMGR_ACTIVE_PENDING" "$(hostname):${ip%$'\n'*}:$now:$now:$now" \
+        | tee -a "$PROFILE"
+}
+
+
+# ------------------------------------------------------------------------------
+#
 create_unit_prof(){
 
 cat > ./gtod <<EOT
@@ -1640,6 +1688,9 @@ PILOT_SCRIPT=`which radical-pilot-agent`
 # after all is said and done, we should end up with a usable python version.
 # Verify it
 verify_install
+
+# we should have a better `gtod` now
+test -z $(which radical-gtod) || cp $(which radical-gtod ./gtod)
 
 AGENT_CMD="$PYTHON $PILOT_SCRIPT"
 
