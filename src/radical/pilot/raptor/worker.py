@@ -1,5 +1,5 @@
 
-# pylint: disable=eval-used
+
 
 import os
 import sys
@@ -34,7 +34,7 @@ class Worker(rpu.Component):
         # generate a MPI rank dependent UID for each worker process
         # FIXME: this should be delegated to ru.generate_id
         # FIXME: why do we need to import `os` again after MPI Spawn?
-        import os                                                         # noqa
+        import os                                   # pylint: disable=reimported
 
         # FIXME: rank determination should be moved to RU
         rank = None
@@ -135,19 +135,11 @@ class Worker(rpu.Component):
         time.sleep(1)
 
         # `info` is a placeholder for any additional meta data communicated to
-<<<<<<< HEAD:src/radical/pilot/task_overlay/worker.py
-        # the worker
-        self.publish(rpc.CONTROL_PUBSUB, {'cmd': 'worker_register',
-                                          'arg': {'uid' : self._uid,
-                                                  'info': self._info}})
-        self._log.debug('gpus  %s', str(self._resources['cores']))
-=======
         # the worker.  Only first rank publishes.
         if self._cfg['rank'] == 0:
             self.publish(rpc.CONTROL_PUBSUB, {'cmd': 'worker_register',
                                               'arg': {'uid' : self._cfg['wid'],
                                                       'info': self._info}})
->>>>>>> feature/resource_plots:src/radical/pilot/raptor/worker.py
 
 
     # --------------------------------------------------------------------------
@@ -458,12 +450,11 @@ class Worker(rpu.Component):
                   # while not self._res_evt.wait(timeout=1.0):
                   #     self._log.debug('=== req_alloc_wait %s', task['uid'])
 
-                    if True:
-                        time.sleep(0.01)
+                    time.sleep(0.01)
 
-                        # break on termination
-                        if self._term.is_set():
-                            return False
+                    # break on termination
+                    if self._term.is_set():
+                        return False
 
                     self._res_evt.clear()
 
@@ -607,7 +598,7 @@ class Worker(rpu.Component):
         try:
             while not self._term.is_set():
 
-                self._log.debug('=== waiting for results')
+              # self._log.debug('=== waiting for results')
 
                 try:
                     res = self._result_queue.get(timeout=0.1)
@@ -671,12 +662,10 @@ class Worker(rpu.Component):
     def _control_cb(self, topic, msg):
 
         if msg['cmd'] == 'terminate':
-            self._log.debug('got terminate msg: %s: %s', topic, msg)
             self._term.set()
 
         elif msg['cmd'] == 'worker_terminate':
-            if msg['arg']['uid'] == self._uid:
-                self._log.debug('got terminate msg: %s: %s', topic, msg)
+            if msg['arg']['uid'] == self._cfg['wid']:
                 self._term.set()
 
 
