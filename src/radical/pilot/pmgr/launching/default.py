@@ -39,6 +39,7 @@ JOB_CHECK_MAX_MISSES  =   3  # number of times to find a job missing before
 LOCAL_SCHEME     = 'file'
 BOOTSTRAPPER_0_A = "bootstrap_0.sh"
 BOOTSTRAPPER_0_B = "bootstrap_zmq.sh"
+CERTS            = 'cacert.pem.gz'
 
 
 # ------------------------------------------------------------------------------
@@ -405,7 +406,8 @@ class Default(PMGRLaunchingComponent):
 
                     self._start_pilot_bulk(resource, schema, pilots)
 
-                    self.advance(pilots, rps.PMGR_ACTIVE_PENDING, push=False, publish=True)
+                    self.advance(pilots, rps.PMGR_ACTIVE_PENDING,
+                                         push=False, publish=True)
 
                 except Exception:
                     self._log.exception('bulk launch failed')
@@ -511,7 +513,8 @@ class Default(PMGRLaunchingComponent):
 
             os.makedirs('%s/%s' % (tmp_dir, pid))
 
-            info = self._prepare_pilot(resource, rcfg, pilot, expand)
+            info = self._prepare_pilot(resource, rcfg, pilot, expand, tar_name)
+
             ft_list += info['fts']
             jd_list.append(info['jd'])
 
@@ -809,7 +812,7 @@ class Default(PMGRLaunchingComponent):
 
     # --------------------------------------------------------------------------
     #
-    def _prepare_pilot(self, resource, rcfg, pilot, expand):
+    def _prepare_pilot(self, resource, rcfg, pilot, expand, tar_name):
 
         sid = self._session.uid
         pid = pilot["uid"]
@@ -1062,8 +1065,6 @@ class Default(PMGRLaunchingComponent):
             number_gpus   = int(gpus_per_node *
                             math.ceil(float(number_gpus) / gpus_per_node))
 
-        tar_name = '%s.%s.tgz' % (sid, self.uid)
-
         # set mandatory args
         bootstrap_args  = ""
 
@@ -1145,15 +1146,27 @@ class Default(PMGRLaunchingComponent):
         self._log.debug("Write agent cfg to '%s'.", cfg_tmp_file)
         ru.write_json(agent_cfg, cfg_tmp_file)
 
-        ret['fts'].append({'src': cfg_tmp_file,
-                           'tgt': '%s/%s' % (pilot_sandbox, agent_cfg_name),
-                           'rem': True})  # purge the tmp file after packing
+        # always stage agent cfg for each pilot, not in the tarball
+        # FIXME: purge the tmp file after staging
+        self._log.debug('=== cfg %s -> %s', agent_cfg['pid'], pilot_sandbox)
+        ret['sds'].append({'source': cfg_tmp_file,
+                           'target': '%s/%s' % (pilot['pilot_sandbox'], agent_cfg_name),
+                           'action': rpc.TRANSFER})
+
+        # always stage the bootstrapper for each pilot, not in the tarball
+        # FIXME: this results in many staging ops for many pilots
+        bootstrapper_path = os.path.abspath("%s/agent/bootstrap_0.sh"
+                                           % self._root_dir)
+        ret['sds'].append({'source': bootstrapper_path,
+                           'target': '%s/bootstrap_0.sh' % pilot['pilot_sandbox'],
+                           'action': rpc.TRANSFER})
 
         # ----------------------------------------------------------------------
         # we also touch the log and profile tarballs in the target pilot sandbox
         ret['fts'].append({'src': '/dev/null',
                            'tgt': '%s/%s' % (pilot_sandbox, '%s.log.tgz' % pid),
                            'rem': False})  # don't remove /dev/null
+
         # only stage profiles if we profile
         if self._prof.enabled:
             ret['fts'].append({
@@ -1171,7 +1184,7 @@ class Default(PMGRLaunchingComponent):
 
             for sdist in sdist_paths:
                 base = os.path.basename(sdist)
-                ret['ft'].append({
+                ret['fts'].append({
                     'src': sdist,
                     'tgt': '%s/%s' % (session_sandbox, base),
                     'rem': False
@@ -1180,16 +1193,6 @@ class Default(PMGRLaunchingComponent):
             # Copy the bootstrap shell script.
             bootstrapper_path = os.path.abspath("%s/agent/%s"
                               % (self._root_dir, BOOTSTRAPPER_0_A))
-            self._log.debug("use bootstrapper %s", bootstrapper_path)
-
-            ret['ft'].append({'src': bootstrapper_path,
-                              'tgt': '%s/%s' % (session_sandbox, BOOTSTRAPPER_0),
-                              'rem': False
-                             })
-
-            # Copy the bootstrap shell script.
-            bootstrapper_path = os.path.abspath("%s/agent/bootstrap_0.sh"
-                              % self._root_dir)
             ret['fts'].append({'src': bootstrapper_path,
                                'tgt': session_sandbox,
                                'rem': False
@@ -1200,38 +1203,23 @@ class Default(PMGRLaunchingComponent):
             # TODO: use booleans all the way?
             if stage_cacerts:
 
-                certs = 'cacert.pem.gz'
-                cpath = os.path.abspath("%s/agent/%s" % (self._root_dir, certs))
+                cpath = os.path.abspath("%s/agent/%s" % (self._root_dir, CERTS))
                 self._log.debug("use CAs %s", cpath)
 
                 ret['fts'].append({'src': cpath,
-                                   'tgt': '%s/%s' % (session_sandbox, certs),
+                                   'tgt': '%s/%s' % (session_sandbox, CERTS),
                                    'rem': False})
 
             self._sbox_cache[resource] = True
-
-        # always stage the bootstrapper for each pilot, but *not* in the tarball
-        # FIXME: this results in many staging ops for many pilots
-        bootstrapper_path = os.path.abspath("%s/agent/bootstrap_0.sh"
-                                           % self._root_dir)
-        bootstrap_tgt = '%s/bootstrap_0.sh' % (pilot_sandbox)
-        ret['sds'].append({'source': bootstrapper_path,
-                           'target': bootstrap_tgt,
-                           'action': rpc.TRANSFER})
 
         # ----------------------------------------------------------------------
         # Create SAGA Job description and submit the pilot job
 
         jd = rs.job.Description()
 
-        if shared_filesystem:
-            bootstrap_tgt = '%s/%s' % (session_sandbox, BOOTSTRAPPER_0_A)
-        else:
-            bootstrap_tgt = '%s/%s' % ('.', BOOTSTRAPPER_0_A)
-
         jd.name                  = job_name
         jd.executable            = "/bin/bash"
-        jd.arguments             = ['-l %s %s' % (bootstrap_tgt, bootstrap_args)]
+        jd.arguments             = ['-l ./bootstrap_0.sh %s' % bootstrap_args]
         jd.working_directory     = pilot_sandbox
         jd.project               = project
         jd.output                = "bootstrap_0.out"
@@ -1246,6 +1234,12 @@ class Default(PMGRLaunchingComponent):
         jd.candidate_hosts       = candidate_hosts
         jd.environment           = dict()
         jd.system_architecture   = system_architecture
+
+        # register used resources in DB (enacted on next advance)
+        pilot['resources'] = {'cpu': number_cores,
+                              'gpu': number_gpus}
+        pilot['$set']      = ['resources']
+
 
         # we set any saga_jd_supplement keys which are not already set above
         for key, val in saga_jd_supplement.items():
@@ -1274,12 +1268,6 @@ class Default(PMGRLaunchingComponent):
         jd.file_transfer = list()
         if not shared_filesystem:
 
-            jd.file_transfer.extend([
-                'site:%s/%s > %s' % (session_sandbox, BOOTSTRAPPER_0_A, BOOTSTRAPPER_0_A),
-                'site:%s/%s.log.tgz > %s.log.tgz' % (pilot_sandbox, pid, pid),
-                'site:%s/%s.log.tgz < %s.log.tgz' % (pilot_sandbox, pid, pid)
-            ])
-
             if self._prof.enabled:
                 jd.file_transfer.extend([
                     'site:%s/%s.prof.tgz > %s.prof.tgz' % (pilot_sandbox, pid, pid),
@@ -1293,7 +1281,7 @@ class Default(PMGRLaunchingComponent):
 
             if stage_cacerts:
                 jd.file_transfer.extend([
-                    'site:%s/%s > %s' % (session_sandbox, certs, certs)
+                    'site:%s/%s > %s' % (session_sandbox, CERTS, CERTS)
                 ])
 
         self._log.debug("Bootstrap command line: %s %s", jd.executable, jd.arguments)
@@ -1329,8 +1317,6 @@ class Default(PMGRLaunchingComponent):
 
         for sd in sds:
             sd['prof_id'] = pilot['uid']
-
-        for sd in sds:
             sd['source'] = str(complete_url(sd['source'], loc_ctx, self._log))
             sd['target'] = str(complete_url(sd['target'], rem_ctx, self._log))
 
