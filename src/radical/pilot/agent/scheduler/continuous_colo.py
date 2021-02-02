@@ -8,8 +8,8 @@ import radical.utils as ru
 
 from .continuous import Continuous
 
-from ... import states                   as rps
-from ... import compute_unit_description as rpcud
+from ... import states           as rps
+from ... import task_description as rpcud
 
 
 # The BOT Scheduler schedules tasks just like the continuous scheduler (and in
@@ -123,7 +123,6 @@ from ... import compute_unit_description as rpcud
 #   task.4  size=4
 #
 #   tasks 1 to 4 will run concurrently, but possibly on different nodes.
-#
 #
 #   task.1  size=4 de-locate=True
 #   task.2  size=4 de-locate=True
@@ -266,9 +265,10 @@ class ContinuousColo(Continuous):
 
     # --------------------------------------------------------------------------
     # overload the main method from the base class
-    def _schedule_units(self, tasks):
+    def _schedule_tasks(self, tasks):
 
-        tasks = ru.as_list(tasks)
+        if not isinstance(tasks, list):
+            tasks = [tasks]
 
         self.advance(tasks, rps.AGENT_SCHEDULING, publish=True, push=False)
 
@@ -277,17 +277,20 @@ class ContinuousColo(Continuous):
             # cache ID int to avoid repeated parsing
             for task in tasks:
 
-                uid   = task['uid']
-                descr = task['description']
+                uid      = task['uid']
+                descr    = task['description']
+                colo_tag = descr.get('tags', {}).get('colocate')
 
-                node, size = self._get_tags(descr)
-
-                # tasks w/o node spec and single batched handled as usual,
-                # and we don't keep any infos around
-                if not node and not size:
-                  # self._log.debug('no colo tags for %s', uid)
+                # tasks w/o order info are handled as usual, and we don't keep
+                # any infos around
+                if not colo_tag:
+                  # self._log.debug('no tags for %s', uid)
                     self._unordered.append(task)
                     continue
+
+                # this uniit wants to be ordered - keep it in our registry
+                assert(uid not in self._tasks), 'duplicated task %s' % uid
+                self._tasks[uid] = task
 
                 # this task wants to be ordered - keep it in our registry
                 assert(uid not in self._tasks), 'duplicated task %s' % uid
