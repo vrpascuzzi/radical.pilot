@@ -57,6 +57,8 @@ def main(cfg):
     log  = ru.Logger(name=cfg.uid, ns='radical.pilot', path=cfg.path)
     prof = ru.Profiler(name=cfg.uid, ns='radical.pilot', path=cfg.path)
 
+    prof.register(['comp_start', 'comp_stop'])
+
     try:
         prof.prof('comp_start', uid=cfg.uid)
         prof.disable()

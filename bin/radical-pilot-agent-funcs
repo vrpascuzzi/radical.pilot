@@ -60,6 +60,13 @@ class Executor(object):
         self._prof = ru.Profiler(self._uid, ns='radical.pilot', path=pwd)
         self._cfg  = ru.read_json('%s/%s.cfg' % (pwd, self._uid))
 
+        self._prof.register([
+                             'init_start', 'init_stop',
+                             'work_start', 'work_stop',
+                             'task_get',   'task_put'
+                             'cmd'
+                            ])
+
         self._initialize()
 
 

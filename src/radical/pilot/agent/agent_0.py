@@ -56,6 +56,8 @@ class Agent_0(rpu.Worker):
 
         # this is the earliest point to sync bootstrap and agent profiles
         prof = ru.Profiler(ns='radical.pilot', name='agent.0')
+
+        prof.register(['hostname', 'cmd'])
         prof.prof('hostname', uid=cfg.pid, msg=ru.get_hostname())
 
         # connect to MongoDB for state push/pull
@@ -698,7 +700,6 @@ class Agent_0(rpu.Worker):
                             multi=True)
 
         self._log.info("tasks pulled: %4d", len(task_list))
-        self._prof.prof('get', msg='bulk: %d' % len(task_list), uid=self._pid)
 
         for task in task_list:
 
@@ -711,7 +712,6 @@ class Agent_0(rpu.Worker):
 
             # we need to make sure to have the correct state:
             task['state'] = rps._task_state_collapse(task['states'])
-            self._prof.prof('get', uid=task['uid'])
 
             # FIXME: raise or fail task!
             if task['state'] != rps.AGENT_STAGING_INPUT_PENDING:

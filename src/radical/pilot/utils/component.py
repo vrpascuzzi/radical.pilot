@@ -47,6 +47,14 @@ class ComponentManager(object):
         self._log  = ru.Logger(self._uid, ns='radical.pilot',
                                path=self._cfg.path)
 
+        self._prof.register([
+                             'component_final',
+                             'component_init',
+                             'init1', 'init2',
+                             'start_bridges_start',    'start_bridges_stop',
+                             'start_components_start', 'start_components_stop',
+                             'close', 'term'])
+
         self._prof.prof('init2', uid=self._uid, msg=self._cfg.path)
 
         # Every ComponentManager runs a HB pubsub bridge in a separate thread.
@@ -441,6 +449,11 @@ class Component(object):
       #                            scope='entity',
       #                            start='get',
       #                            stop=['put', 'drop'])
+        self._prof.register([
+                             'init1', 'init2',
+                             'component_init', 'component_final',
+                            ])
+
         self._prof.prof('init1', uid=self._uid, msg=self._prof.path)
 
         self._q    = None
@@ -780,6 +793,8 @@ class Component(object):
 
         for state in states:
 
+            self._prof.register(state)
+
             self._log.debug('%s register output %s:%s', self.uid, state, output)
 
             # we want a *unique* output queue for each state.
@@ -1068,7 +1083,6 @@ class Component(object):
             for thing in things:
                 state = thing.get('state')  # can be stateless
                 uid   = thing.get('uid')    # and not have uids
-                self._prof.prof('get', uid=uid, state=state)
 
                 if state not in buckets:
                     buckets[state] = list()
@@ -1171,7 +1185,7 @@ class Component(object):
             _state = thing['state']
 
             if prof:
-                self._prof.prof('advance', uid=uid, state=_state, ts=ts)
+                self._prof.prof(state, uid=uid, ts=ts)
 
             if _state not in buckets:
                 buckets[_state] = list()
@@ -1208,11 +1222,6 @@ class Component(object):
 
             self.publish(rpc.STATE_PUBSUB, {'cmd': 'update', 'arg': to_publish})
 
-          # ts = time.time()
-          # for thing in things:
-          #     self._prof.prof('publish', uid=thing['uid'],
-          #                     state=thing['state'], ts=ts)
-
         # never carry $all and across component boundaries!
         for thing in things:
             if '$all' in thing:
@@ -1231,24 +1240,18 @@ class Component(object):
                     # things in final state are dropped
                     for thing in _things:
                         self._log.debug('final %s [%s]', thing['uid'], _state)
-                        self._prof.prof('drop', uid=thing['uid'], state=_state,
-                                        ts=ts)
                     continue
 
                 if _state not in self._outputs:
                     # unknown target state -- error
                     for thing in _things:
                         self._log.debug("lost  %s [%s]", thing['uid'], _state)
-                        self._prof.prof('lost', uid=thing['uid'], state=_state,
-                                        ts=ts)
                     continue
 
                 if not self._outputs[_state]:
                     # empty output -- drop thing
                     for thing in _things:
                         self._log.debug('drop  %s [%s]', thing['uid'], _state)
-                        self._prof.prof('drop', uid=thing['uid'], state=_state,
-                                        ts=ts)
                     continue
 
                 output = self._outputs[_state]
@@ -1256,11 +1259,6 @@ class Component(object):
                 # push the thing down the drain
                 self._log.debug('put bulk %s: %s', _state, len(_things))
                 output.put(_things)
-
-                ts = time.time()
-                for thing in _things:
-                    self._prof.prof('put', uid=thing['uid'], state=_state,
-                                    msg=output.name, ts=ts)
 
 
     # --------------------------------------------------------------------------

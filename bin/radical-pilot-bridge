@@ -85,6 +85,9 @@ def main(cfg):
     log  = ru.Logger(name=cfg.uid, ns='radical.pilot', path=cfg.path)
     prof = ru.Profiler(name=cfg.uid, ns='radical.pilot', path=cfg.path)
 
+    prof.register(['bridge_start', 'bridge_stop'])
+
+
     try:
         prof.prof('bridge_start', uid=cfg.uid)
         prof.disable()
@@ -94,6 +97,8 @@ def main(cfg):
         prof.prof('bridge_stop', uid=cfg.uid)
 
 
+# ------------------------------------------------------------------------------
+#
 def wrapped_main(cfg, log, prof):
 
     term = mt.Event()

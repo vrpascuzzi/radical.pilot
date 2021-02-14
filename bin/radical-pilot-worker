@@ -53,6 +53,8 @@ def main(cfg):
     log  = ru.Logger(name=cfg.uid, ns='radical.pilot', path=cfg.path)
     prof = ru.Profiler(name=cfg.uid, ns='radical.pilot', path=cfg.path)
 
+    prof.register(['worker_start', 'worker_stop', 'worker_fail'])
+
     try:
         prof.prof('worker_start', uid=cfg.uid)
         prof.disable()

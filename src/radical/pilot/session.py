@@ -1,7 +1,7 @@
 # pylint: disable=protected-access,unused-argument
 
-__copyright__ = "Copyright 2013-2016, http://radical.rutgers.edu"
-__license__   = "MIT"
+__copyright__ = 'Copyright 2013-2016, http://radical.rutgers.edu'
+__license__   = 'MIT'
 
 import os
 import sys
@@ -161,7 +161,7 @@ class Session(rs.Session):
         # create db connection - need a dburl to connect to
         if not dburl: dburl = self._cfg.dburl
         if not dburl: dburl = self._cfg.default_dburl
-        if not dburl: raise RuntimeError("no db URL (set RADICAL_PILOT_DBURL)")
+        if not dburl: raise RuntimeError('no db URL (set RADICAL_PILOT_DBURL)')
 
         self._cfg.dburl = dburl
 
@@ -178,7 +178,7 @@ class Session(rs.Session):
             self._dbs = DBSession(sid=self.uid, dburl=dburl,
                                   cfg=self._cfg, log=self._log)
 
-            py_version_detail = sys.version.replace("\n", " ")
+            py_version_detail = sys.version.replace('\n', ' ')
             from . import version_detail as rp_version_detail
 
             self.inject_metadata({'radical_stack':
@@ -187,7 +187,7 @@ class Session(rs.Session):
                                           'ru': ru.version_detail,
                                           'py': py_version_detail}})
         except Exception as e:
-            self._rep.error(">>err\n")
+            self._rep.error('>>err\n')
             self._log.exception('session create failed [%s]' %
                     dburl_no_passwd)
             raise RuntimeError ('session create failed [%s]' %
@@ -206,13 +206,13 @@ class Session(rs.Session):
         if self._cfg.record:
 
             # append session ID to recording path
-            self._rec = "%s/%s" % (self._rec, self._uid)
+            self._rec = '%s/%s' % (self._rec, self._uid)
 
             # create recording path and record session
             os.system('mkdir -p %s' % self._rec)
             ru.write_json({'dburl': str(self.dburl)},
-                          "%s/session.json" % self._rec)
-            self._log.info("recording session in %s" % self._rec)
+                          '%s/session.json' % self._rec)
+            self._log.info('recording session in %s' % self._rec)
 
         self._rep.ok('>>ok\n')
 
@@ -252,8 +252,8 @@ class Session(rs.Session):
             return
 
         self._rep.info('closing session %s' % self._uid)
-        self._log.debug("session %s closing", self._uid)
-        self._prof.prof("session_close", uid=self._uid)
+        self._log.debug('session %s closing', self._uid)
+        self._prof.prof('session_close', uid=self._uid)
 
         # set defaults
         if cleanup   is None: cleanup   = True
@@ -264,24 +264,24 @@ class Session(rs.Session):
             terminate = True
 
         for tmgr_uid, tmgr in self._tmgrs.items():
-            self._log.debug("session %s closes tmgr   %s", self._uid, tmgr_uid)
+            self._log.debug('session %s closes tmgr   %s', self._uid, tmgr_uid)
             tmgr.close()
-            self._log.debug("session %s closed tmgr   %s", self._uid, tmgr_uid)
+            self._log.debug('session %s closed tmgr   %s', self._uid, tmgr_uid)
 
         for pmgr_uid, pmgr in self._pmgrs.items():
-            self._log.debug("session %s closes pmgr   %s", self._uid, pmgr_uid)
+            self._log.debug('session %s closes pmgr   %s', self._uid, pmgr_uid)
             pmgr.close(terminate=terminate)
-            self._log.debug("session %s closed pmgr   %s", self._uid, pmgr_uid)
+            self._log.debug('session %s closed pmgr   %s', self._uid, pmgr_uid)
 
         if self._cmgr:
             self._cmgr.close()
 
         if self._dbs:
-            self._log.debug("session %s closes db (%s)", self._uid, cleanup)
+            self._log.debug('session %s closes db (%s)', self._uid, cleanup)
             self._dbs.close(delete=cleanup)
 
-        self._log.debug("session %s closed (delete=%s)", self._uid, cleanup)
-        self._prof.prof("session_stop", uid=self._uid)
+        self._log.debug('session %s closed (delete=%s)', self._uid, cleanup)
+        self._prof.prof('session_stop', uid=self._uid)
         self._prof.close()
 
         self._closed = True
@@ -290,16 +290,14 @@ class Session(rs.Session):
         # profiles, if so wanted
         if download:
 
-            self._prof.prof("session_fetch_start", uid=self._uid)
             self._log.debug('start download')
             tgt = os.getcwd()
             self.fetch_json    (tgt='%s/%s' % (tgt, self.uid))
             self.fetch_profiles(tgt=tgt)
             self.fetch_logfiles(tgt=tgt)
 
-            self._prof.prof("session_fetch_stop", uid=self._uid)
-
-        self._rep.info('<<session lifetime: %.1fs' % (self.closed - self.created))
+        self._rep.info('<<session lifetime: %.1fs'
+                      % (self.closed - self.created))
         self._rep.ok('>>ok\n')
 
 
@@ -311,12 +309,12 @@ class Session(rs.Session):
         '''
 
         object_dict = {
-            "uid"       : self._uid,
-            "created"   : self.created,
-            "connected" : self.connected,
-            "closed"    : self.closed,
-            "dburl"     : str(self.dburl),
-            "cfg"       : copy.deepcopy(self._cfg)
+            'uid'       : self._uid,
+            'created'   : self.created,
+            'connected' : self.connected,
+            'closed'    : self.closed,
+            'dburl'     : str(self.dburl),
+            'cfg'       : copy.deepcopy(self._cfg)
         }
         return object_dict
 
@@ -462,6 +460,11 @@ class Session(rs.Session):
         '''
 
         prof = ru.Profiler(name=name, ns='radical.pilot', path=self._cfg.path)
+        prof.register([
+                       'session_ok',          'session_close',
+                       'session_start',       'session_stop',
+                       'session_fetch_start', 'session_fetch_stop',
+                      ])
 
         return prof
 
@@ -475,12 +478,12 @@ class Session(rs.Session):
         '''
 
         if not isinstance(metadata, dict):
-            raise Exception("Session metadata should be a dict!")
+            raise Exception('Session metadata should be a dict!')
 
         if self._dbs and self._dbs._c:
             self._dbs._c.update({'type'  : 'session',
-                                 "uid"   : self.uid},
-                                {"$push" : {"metadata": metadata}})
+                                 'uid'   : self.uid},
+                                {'$push' : {'metadata': metadata}})
 
 
     # --------------------------------------------------------------------------
@@ -645,7 +648,7 @@ class Session(rs.Session):
 
             elif '.' not in resource_config.label:
                 raise ValueError('Resource config label format should be '
-                                 '"<domain>.<host>"')
+                                 '<domain>.<host>')
 
             domain, host = resource_config.label.split('.', 1)
             self._log.debug('load rcfg for "%s.%s"', (domain, host))
@@ -661,10 +664,10 @@ class Session(rs.Session):
 
         domain, host = resource.split('.', 1)
         if domain not in self._rcfgs:
-            raise RuntimeError("Resource domain '%s' is unknown." % domain)
+            raise RuntimeError('Resource domain "%s" is unknown.' % domain)
 
         if host not in self._rcfgs[domain]:
-            raise RuntimeError("Resource host '%s' unknown." % host)
+            raise RuntimeError('Resource host "%s" unknown.' % host)
 
         resource_cfg = copy.deepcopy(self._rcfgs[domain][host])
 
@@ -674,7 +677,7 @@ class Session(rs.Session):
 
         if  schema:
             if  schema not in resource_cfg:
-                raise RuntimeError("schema %s unknown for resource %s"
+                raise RuntimeError('schema %s unknown for resource %s'
                                   % (schema, resource))
 
             for key in resource_cfg[schema]:
@@ -754,7 +757,7 @@ class Session(rs.Session):
                 # Get the sandbox from either the pilot_desc or resource conf
                 sandbox_raw = pilot['description'].get('sandbox')
                 if not sandbox_raw:
-                    sandbox_raw = rcfg.get('default_remote_workdir', "$PWD")
+                    sandbox_raw = rcfg.get('default_remote_workdir', '$PWD')
 
 
                 # we may need to replace pat elements with data from the pilot
@@ -793,12 +796,12 @@ class Session(rs.Session):
                     if ret or 'WORKDIR:' not in out:
                         raise RuntimeError("Couldn't get remote workdir.")
 
-                    sandbox_base = out.split(":")[1].strip()
-                    self._log.debug("sandbox base %s", sandbox_base)
+                    sandbox_base = out.split(':')[1].strip()
+                    self._log.debug('sandbox base %s', sandbox_base)
 
                 # at this point we have determined the remote 'pwd' - the
                 # global sandbox is relative to it.
-                fs_url.path = "%s/radical.pilot.sandbox" % sandbox_base
+                fs_url.path = '%s/radical.pilot.sandbox' % sandbox_base
 
                 # before returning, keep the URL string in cache
                 self._cache['resource_sandbox'][resource] = fs_url
@@ -827,12 +830,12 @@ class Session(rs.Session):
             elif 'gsissh' in elems: js_url.schema = 'gsissh'
             elif 'fork'   in elems: js_url.schema = 'fork'
             elif len(elems) == 1  : js_url.schema = 'fork'
-            else: raise Exception("invalid schema: %s" % js_url.schema)
+            else: raise Exception('invalid schema: %s' % js_url.schema)
 
             if js_url.schema == 'fork':
                 js_url.hostname = 'localhost'
 
-            self._log.debug("rsup.PTYShell('%s')", js_url)
+            self._log.debug('rsup.PTYShell(%s)', js_url)
             shell = rsup.PTYShell(js_url, self)
             self._cache['js_shells'][resource][schema] = shell
 
@@ -926,7 +929,7 @@ class Session(rs.Session):
         # default
         if not task_sandbox:
             task_sandbox = ru.Url(self._get_pilot_sandbox(pilot))
-            task_sandbox.path += "/%s/" % task['uid']
+            task_sandbox.path += '/%s/' % task['uid']
 
         # cache
         task['task_sandbox'] = str(task_sandbox)
@@ -958,67 +961,6 @@ class Session(rs.Session):
         else                               : js_hop.schema = 'fork'
 
         return js_url, js_hop
-
-
-    # --------------------------------------------------------------------------
-    #
-    @staticmethod
-    def autopilot(user, passwd):
-
-        try:
-            import github3
-        except ImportError:
-            print('ERROR: github3 library is not available')
-            return
-        import random
-
-        labels = 'type:autopilot'
-        titles = ['+++ Out of Cheese Error +++',
-                  '+++ Redo From Start! +++',
-                  '+++ Mr. Jelly! Mr. Jelly! +++',
-                  '+++ Melon melon melon',
-                  '+++ Wahhhhhhh! Mine! +++',
-                  '+++ Divide By Cucumber Error +++',
-                  '+++ Please Reinstall Universe And Reboot +++',
-                  '+++ Whoops! Here comes the cheese! +++',
-                  '+++ End of Cheese Error +++',
-                  '+++ Can Not Find Drive Z: +++',
-                  '+++ Unknown Application Error +++',
-                  '+++ Please Reboot Universe +++',
-                  '+++ Year Of The Sloth +++',
-                  '+++ error of type 5307 has occured +++',
-                  '+++ Eternal domain error +++',
-                  '+++ Error at Address Number 6, Treacle Mine Road +++']
-
-        def excuse():
-            cmd_fetch  = "telnet bofh.jeffballard.us 666 2>&1 "
-            cmd_filter = "grep 'Your excuse is:' | cut -f 2- -d :"
-            out        = ru.sh_callout("%s | %s" % (cmd_fetch, cmd_filter),
-                                       shell=True)[0]
-            return out.strip()
-
-        github = github3.login(user, passwd)
-        repo   = github.repository("radical-cybertools", "radical.pilot")
-
-        title = 'autopilot: %s' % titles[random.randint(0, len(titles) - 1)]
-
-        print('----------------------------------------------------')
-        print('autopilot')
-
-        for issue in repo.issues(labels=labels, state='open'):
-            if issue.title == title:
-                reply = 'excuse: %s' % excuse()
-                issue.create_comment(reply)
-                print('  resolve: %s' % reply)
-                return
-
-        # issue not found - create
-        body  = 'problem: %s' % excuse()
-        issue = repo.create_issue(title=title, body=body, labels=[labels],
-                                  assignee=user)
-        print('  issue  : %s' % title)
-        print('  problem: %s' % body)
-        print('----------------------------------------------------')
 
 
 # ------------------------------------------------------------------------------

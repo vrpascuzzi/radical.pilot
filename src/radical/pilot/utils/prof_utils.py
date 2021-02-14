@@ -37,8 +37,8 @@ PILOT_DURATIONS = {
         'boot'      : [{ru.EVENT: 'bootstrap_0_start'},
                        {ru.EVENT: 'bootstrap_0_ok'   }],
         'setup_1'   : [{ru.EVENT: 'bootstrap_0_ok'   },
-                       {ru.STATE: s.PMGR_ACTIVE      }],
-        'idle'      : [{ru.STATE: s.PMGR_ACTIVE      },
+                       {ru.EVENT: s.PMGR_ACTIVE      }],
+        'idle'      : [{ru.EVENT: s.PMGR_ACTIVE      },
                        {ru.EVENT: 'cmd'              ,
                         ru.MSG  : 'cancel_pilot'     }],
         'term'      : [{ru.EVENT: 'cmd'              ,
@@ -48,10 +48,10 @@ PILOT_DURATIONS = {
                        {ru.EVENT: 'sub_agent_stop'   }],
     },
     # FIXME: separate out DVM startup time
-    #   'rte'       : [{ru.STATE: s.PMGR_ACTIVE    },
-    #                  {ru.STATE: s.PMGR_ACTIVE    }],
-    #   'setup_2'   : [{ru.STATE: s.PMGR_ACTIVE    },
-    #                  {ru.STATE: s.PMGR_ACTIVE    }],
+    #   'rte'       : [{ru.EVENT: s.PMGR_ACTIVE    },
+    #                  {ru.EVENT: s.PMGR_ACTIVE    }],
+    #   'setup_2'   : [{ru.EVENT: s.PMGR_ACTIVE    },
+    #                  {ru.EVENT: s.PMGR_ACTIVE    }],
     #
     # resources on agent nodes are consumed for all of the pilot's lifetime
     'agent' : {
@@ -67,8 +67,8 @@ PILOT_DURATIONS = {
 TASK_DURATIONS_DEFAULT = {
     'consume' : {
         'exec_queue'  : [{ru.EVENT: 'schedule_ok'            },
-                         {ru.STATE: s.AGENT_EXECUTING        }],
-        'exec_prep'   : [{ru.STATE: s.AGENT_EXECUTING        },
+                         {ru.EVENT: s.AGENT_EXECUTING        }],
+        'exec_prep'   : [{ru.EVENT: s.AGENT_EXECUTING        },
                          {ru.EVENT: 'exec_start'             }],
         'exec_rp'     : [{ru.EVENT: 'exec_start'             },
                          {ru.EVENT: 'task_start'             }],
@@ -100,8 +100,8 @@ TASK_DURATIONS_DEFAULT = {
 TASK_DURATIONS_APP = {
     'consume' : {
         'exec_queue'  : [{ru.EVENT: 'schedule_ok'            },
-                         {ru.STATE: s.AGENT_EXECUTING        }],
-        'exec_prep'   : [{ru.STATE: s.AGENT_EXECUTING        },
+                         {ru.EVENT: s.AGENT_EXECUTING        }],
+        'exec_prep'   : [{ru.EVENT: s.AGENT_EXECUTING        },
                          {ru.EVENT: 'exec_start'             }],
         'exec_rp'     : [{ru.EVENT: 'exec_start'             },
                          {ru.EVENT: 'task_start'             }],
@@ -128,8 +128,8 @@ TASK_DURATIONS_APP = {
 TASK_DURATIONS_PRTE = {
     'consume' : {
         'exec_queue'  : [{ru.EVENT: 'schedule_ok'            },
-                         {ru.STATE: s.AGENT_EXECUTING        }],
-        'exec_prep'   : [{ru.STATE: s.AGENT_EXECUTING        },
+                         {ru.EVENT: s.AGENT_EXECUTING        }],
+        'exec_prep'   : [{ru.EVENT: s.AGENT_EXECUTING        },
                          {ru.EVENT: 'exec_start'             }],
         'exec_rp'     : [{ru.EVENT: 'exec_start'             },
                          {ru.EVENT: 'task_start'             }],
@@ -169,8 +169,8 @@ TASK_DURATIONS_PRTE = {
 TASK_DURATIONS_PRTE_APP  = {
     'consume' : {
         'exec_queue'  : [{ru.EVENT: 'schedule_ok'            },
-                         {ru.STATE: s.AGENT_EXECUTING        }],
-        'exec_prep'   : [{ru.STATE: s.AGENT_EXECUTING        },
+                         {ru.EVENT: s.AGENT_EXECUTING        }],
+        'exec_prep'   : [{ru.EVENT: s.AGENT_EXECUTING        },
                          {ru.EVENT: 'exec_start'             }],
         'exec_rp'     : [{ru.EVENT: 'exec_start'             },
                          {ru.EVENT: 'task_start'             }],
@@ -220,29 +220,6 @@ def _convert_sdurations(sdurations):
 
         ldurations (dict): a collection of long form durations
 
-    Example:
-
-        sdurations = {'name_of_duration': [{'STATE': s.STATE_NAME},
-                                           {'EVENT': 'event_name'}]}
-        ldurations = {'name_of_duration': [{ru.EVENT: 'state',
-                                            ru.STATE: s.STATE_NAME},
-                                           {ru.EVENT: 'event_name',
-                                            ru.STATE: None}]}
-        sdurations = {'name_of_duration': [{'STATE': s.STATE_NAME},
-                                           [{'EVENT': 'event_name'},
-                                            {'STATE': s.STATE_NAME}]]}
-        ldurations = {'name_of_duration': [{ru.EVENT: 'state',
-                                            ru.STATE: s.STATE_NAME},
-                                           [{ru.EVENT: 'event_name',
-                                             ru.STATE: None},
-                                            {ru.EVENT: 'state',
-                                             ru.STATE: s.STATE_NAME}]]}
-        sdurations = {'name_of_duration': [{'STATE': s.STATE_NAME},
-                                           {'MSG': 'message_name'}]}
-        ldurations = {'name_of_duration': [{ru.EVENT: 'state',
-                                            ru.STATE: s.STATE_NAME},
-                                           {ru.EVENT: 'cmd',
-                                            ru.MSG: 'message_name'}]}
     '''
 
     ldurations = dict()
@@ -269,14 +246,13 @@ def _convert_sdurations(sdurations):
 def _expand_sduration(sduration):
     '''
     Expands a duration expressed in short form to its long form for the
-    timestamp types `ru.STATE`, `ru.EVENT` and `ru.MSG`.
+    timestamp types `ru.EVENT` and `ru.MSG`.
 
     Definitions:
 
     - Short form duration: one dictionary containing a state or event name.
     - Long form duration: one dictionary containing two keys, one of type
-      `ru.EVENT` and one of type `ru.STATE`. The `ru.EVENT` key has a string
-      value while the `ru.STATE` key has a `s.STATE_NAME` object as its value.
+      `ru.EVENT`.
 
     Args:
 
@@ -286,19 +262,11 @@ def _expand_sduration(sduration):
 
         lduration (dict): sduration in long form
 
-    Example:
-
-        sduration = {'STATE': s.STATE_NAME}
-        lduration = {ru.EVENT: 'state', ru.STATE: s.STATE_NAME}
-        sduration = {'EVENT': 'event_name'}
-        lduration = {ru.EVENT: 'event_name', ru.STATE: None}
-        sduration = {'MSG': 'mesage_name'}
-        lduration = {ru.EVENT: 'cmd', ru.MSG: 'message_name'}
     '''
 
-    # Allow durations with both ru.EVENT and ru.STATE.
+    # Allow durations with ru.EVENT
     tt = list(sduration.keys())
-    if len(tt) == 1 and tt[0] not in ['STATE', 'EVENT', 'MSG']:
+    if len(tt) == 1 and tt[0] not in ['EVENT', 'MSG']:
         raise Exception('unknown timestamp type: %s' % tt)
     if len(tt) == 2:
         return sduration
@@ -309,10 +277,8 @@ def _expand_sduration(sduration):
     lduration = None
 
     for k,v in sduration.items():
-        if k == 'STATE':
-            lduration = {ru.EVENT: 'state', ru.STATE: v}
-        elif k == 'EVENT':
-            lduration = {ru.EVENT: v, ru.STATE: None}
+        if k == 'EVENT':
+            lduration = {ru.EVENT: v}
         elif k == 'MSG':
             lduration = {ru.EVENT: 'cmd', ru.MSG: v}
 
@@ -323,11 +289,11 @@ def _expand_sduration(sduration):
 # are contiguos.
 # NOTE: _init durations are most often 0.
 PILOT_DURATIONS_DEBUG_SHORT = {
-    'p_pmgr_create'           : [{'STATE': s.NEW                   },
-                                 {'STATE': s.PMGR_LAUNCHING_PENDING}],
-    'p_pmgr_launching_init'   : [{'STATE': s.PMGR_LAUNCHING_PENDING},
-                                 {'STATE': s.PMGR_LAUNCHING        }],
-    'p_pmgr_launching'        : [{'STATE': s.PMGR_LAUNCHING        },
+    'p_pmgr_create'           : [{'EVENT': s.NEW                   },
+                                 {'EVENT': s.PMGR_LAUNCHING_PENDING}],
+    'p_pmgr_launching_init'   : [{'EVENT': s.PMGR_LAUNCHING_PENDING},
+                                 {'EVENT': s.PMGR_LAUNCHING        }],
+    'p_pmgr_launching'        : [{'EVENT': s.PMGR_LAUNCHING        },
                                  {'EVENT': 'staging_in_start'      }],
     'p_pmgr_stage_in'         : [{'EVENT': 'staging_in_start'      },
                                  {'EVENT': 'staging_in_stop'       }],
@@ -336,9 +302,9 @@ PILOT_DURATIONS_DEBUG_SHORT = {
     'p_pmgr_submission'       : [{'EVENT': 'submission_start'      },
                                  {'EVENT': 'submission_stop'       }],
     'p_pmgr_scheduling_init'  : [{'EVENT': 'submission_stop'       },
-                                 {'STATE': s.PMGR_ACTIVE_PENDING   }],
+                                 {'EVENT': s.PMGR_ACTIVE_PENDING   }],
     # batch system queue time
-    'p_pmgr_scheduling'       : [{'STATE': s.PMGR_ACTIVE_PENDING   },
+    'p_pmgr_scheduling'       : [{'EVENT': s.PMGR_ACTIVE_PENDING   },
                                  {'EVENT': 'bootstrap_0_start'     }],
     'p_agent_ve_setup_init'   : [{'EVENT': 'bootstrap_0_start'     },
                                  {'EVENT': 've_setup_start'        }],
@@ -353,16 +319,16 @@ PILOT_DURATIONS_DEBUG_SHORT = {
     'p_agent_install'         : [{'EVENT': 'rp_install_start'      },
                                  {'EVENT': 'rp_install_stop'       }],
     'p_agent_launching'       : [{'EVENT': 'rp_install_stop'       },
-                                 {'STATE': s.PMGR_ACTIVE           }],
-    'p_agent_terminate_init'  : [{'STATE': s.PMGR_ACTIVE           },
+                                 {'EVENT': s.PMGR_ACTIVE           }],
+    'p_agent_terminate_init'  : [{'EVENT': s.PMGR_ACTIVE           },
                                  {'MSG'  : 'cancel_pilot'          }],
     'p_agent_terminate'       : [{'MSG'  : 'cancel_pilot'          },
                                  {'EVENT': 'bootstrap_0_stop'      }],
     # total pilot runtime
     'p_agent_finalize'        : [{'EVENT': 'bootstrap_0_stop'      },
-                                 [{'STATE': s.DONE                 },
-                                  {'STATE': s.CANCELED             },
-                                  {'STATE': s.FAILED               }]],
+                                 [{'EVENT': s.DONE                 },
+                                  {'EVENT': s.CANCELED             },
+                                  {'EVENT': s.FAILED               }]],
     'p_agent_runtime'         : [{'EVENT': 'bootstrap_0_start'     },
                                  {'EVENT': 'bootstrap_0_stop'      }]
 }
@@ -409,30 +375,30 @@ PILOT_DURATIONS_DEBUG_RU = {
 # Set of default task durations for RADICAL-Analytics. All the durations
 # are contiguos.
 TASK_DURATIONS_DEBUG_SHORT = {
-    'u_tmgr_create'              : [{'STATE': s.NEW                         },
-                                    {'STATE': s.TMGR_SCHEDULING_PENDING     }],
-    'u_tmgr_schedule_queue'      : [{'STATE': s.TMGR_SCHEDULING_PENDING     },
-                                    {'STATE': s.TMGR_SCHEDULING             }],
-    'u_tmgr_schedule'            : [{'STATE': s.TMGR_SCHEDULING             },
-                                    {'STATE': s.TMGR_STAGING_INPUT_PENDING  }],
+    'u_tmgr_create'              : [{'EVENT': s.NEW                         },
+                                    {'EVENT': s.TMGR_SCHEDULING_PENDING     }],
+    'u_tmgr_schedule_queue'      : [{'EVENT': s.TMGR_SCHEDULING_PENDING     },
+                                    {'EVENT': s.TMGR_SCHEDULING             }],
+    'u_tmgr_schedule'            : [{'EVENT': s.TMGR_SCHEDULING             },
+                                    {'EVENT': s.TMGR_STAGING_INPUT_PENDING  }],
     # push to mongodb
-    'u_tmgr_stage_in_queue'      : [{'STATE': s.TMGR_STAGING_INPUT_PENDING  },
-                                    {'STATE': s.TMGR_STAGING_INPUT          }],
+    'u_tmgr_stage_in_queue'      : [{'EVENT': s.TMGR_STAGING_INPUT_PENDING  },
+                                    {'EVENT': s.TMGR_STAGING_INPUT          }],
     # wait in mongodb
-    'u_tmgr_stage_in'            : [{'STATE': s.TMGR_STAGING_INPUT          },
-                                    {'STATE': s.AGENT_STAGING_INPUT_PENDING }],
+    'u_tmgr_stage_in'            : [{'EVENT': s.TMGR_STAGING_INPUT          },
+                                    {'EVENT': s.AGENT_STAGING_INPUT_PENDING }],
     # pull from mongodb
-    'u_agent_stage_in_queue'     : [{'STATE': s.AGENT_STAGING_INPUT_PENDING },
-                                    {'STATE': s.AGENT_STAGING_INPUT         }],
-    'u_agent_stage_in'           : [{'STATE': s.AGENT_STAGING_INPUT         },
-                                    {'STATE': s.AGENT_SCHEDULING_PENDING    }],
-    'u_agent_schedule_queue'     : [{'STATE': s.AGENT_SCHEDULING_PENDING    },
-                                    {'STATE': s.AGENT_SCHEDULING            }],
-    'u_agent_schedule'           : [{'STATE': s.AGENT_SCHEDULING            },
-                                    {'STATE': s.AGENT_EXECUTING_PENDING     }],
-    'u_agent_execute_queue'      : [{'STATE': s.AGENT_EXECUTING_PENDING     },
-                                    {'STATE': s.AGENT_EXECUTING             }],
-    'u_agent_execute_prepare'    : [{'STATE': s.AGENT_EXECUTING             },
+    'u_agent_stage_in_queue'     : [{'EVENT': s.AGENT_STAGING_INPUT_PENDING },
+                                    {'EVENT': s.AGENT_STAGING_INPUT         }],
+    'u_agent_stage_in'           : [{'EVENT': s.AGENT_STAGING_INPUT         },
+                                    {'EVENT': s.AGENT_SCHEDULING_PENDING    }],
+    'u_agent_schedule_queue'     : [{'EVENT': s.AGENT_SCHEDULING_PENDING    },
+                                    {'EVENT': s.AGENT_SCHEDULING            }],
+    'u_agent_schedule'           : [{'EVENT': s.AGENT_SCHEDULING            },
+                                    {'EVENT': s.AGENT_EXECUTING_PENDING     }],
+    'u_agent_execute_queue'      : [{'EVENT': s.AGENT_EXECUTING_PENDING     },
+                                    {'EVENT': s.AGENT_EXECUTING             }],
+    'u_agent_execute_prepare'    : [{'EVENT': s.AGENT_EXECUTING             },
                                     {'EVENT': 'exec_mkdir'                  }],
     'u_agent_execute_mkdir'      : [{'EVENT': 'exec_mkdir'                  },
                                     {'EVENT': 'exec_mkdir_done'             }],
@@ -454,18 +420,18 @@ TASK_DURATIONS_DEBUG_SHORT = {
     'u_agent_lm_stop'            : [{'EVENT': 'task_exec_stop'              },
                                     {'EVENT': 'task_stop'                   }],
     'u_agent_stage_out_start'    : [{'EVENT': 'task_stop'                   },
-                                    {'STATE': s.AGENT_STAGING_OUTPUT_PENDING}],
-    'u_agent_stage_out_queue'    : [{'STATE': s.AGENT_STAGING_OUTPUT_PENDING},
-                                    {'STATE': s.AGENT_STAGING_OUTPUT        }],
-    'u_agent_stage_out'          : [{'STATE': s.AGENT_STAGING_OUTPUT        },
-                                    {'STATE': s.TMGR_STAGING_OUTPUT_PENDING }],
+                                    {'EVENT': s.AGENT_STAGING_OUTPUT_PENDING}],
+    'u_agent_stage_out_queue'    : [{'EVENT': s.AGENT_STAGING_OUTPUT_PENDING},
+                                    {'EVENT': s.AGENT_STAGING_OUTPUT        }],
+    'u_agent_stage_out'          : [{'EVENT': s.AGENT_STAGING_OUTPUT        },
+                                    {'EVENT': s.TMGR_STAGING_OUTPUT_PENDING }],
     # push/pull mongodb
-    'u_agent_push_to_tmgr'       : [{'STATE': s.TMGR_STAGING_OUTPUT_PENDING },
-                                    {'STATE': s.TMGR_STAGING_OUTPUT         }],
-    'u_tmgr_destroy'             : [{'STATE': s.TMGR_STAGING_OUTPUT         },
-                                    [{'STATE': s.DONE                       },
-                                     {'STATE': s.CANCELED                   },
-                                     {'STATE': s.FAILED                     }]],
+    'u_agent_push_to_tmgr'       : [{'EVENT': s.TMGR_STAGING_OUTPUT_PENDING },
+                                    {'EVENT': s.TMGR_STAGING_OUTPUT         }],
+    'u_tmgr_destroy'             : [{'EVENT': s.TMGR_STAGING_OUTPUT         },
+                                    [{'EVENT': s.DONE                       },
+                                     {'EVENT': s.CANCELED                   },
+                                     {'EVENT': s.FAILED                     }]],
     'u_agent_unschedule'         : [{'EVENT': 'unschedule_start'            },
                                     {'EVENT': 'unschedule_stop'             }]
 }
@@ -553,8 +519,7 @@ def get_hostmap_deprecated(profiles):
         for row in prof:
 
             if 'agent.0.prof' in pname    and \
-                row[ru.EVENT] == 'advance' and \
-                row[ru.STATE] == s.PMGR_ACTIVE:
+                row[ru.EVENT] == s.PMGR_ACTIVE:
                 hostmap[row[ru.UID]] = host_id
                 break
 
@@ -753,11 +718,6 @@ def get_node_index(node_list, node, cpn, gpn):
 # ------------------------------------------------------------------------------
 #
 def get_duration(thing, dur):
-
-
-    for e in dur:
-        if ru.STATE in e and ru.EVENT not in e:
-            e[ru.EVENT] = 'state'
 
     t0 = thing.timestamps(event=dur[0])
     t1 = thing.timestamps(event=dur[1])
@@ -1226,10 +1186,6 @@ def _get_task_consumption(session, task, tdurations=None):
                 dur = task_durations['consume'][metric]
                 print(dur)
 
-                for e in dur:
-                    if ru.STATE in e and ru.EVENT not in e:
-                        e[ru.EVENT] = 'state'
-
                 t0 = task.timestamps(event=dur[0])
                 t1 = task.timestamps(event=dur[1])
                 print(t0)
@@ -1261,19 +1217,19 @@ def get_resource_transitions(pilot, task_metrics=None, pilot_metrics=None):
     # we try to find points in time where resource usage moved from purpose A to
     # purpose B.  For example, consider this metric:
     #
-    #   'exec_queue'  : [{ru.EVENT: 'schedule_ok'            },
-    #                    {ru.STATE: s.AGENT_EXECUTING        }],
-    #   'exec_prep'   : [{ru.STATE: s.AGENT_EXECUTING        },
-    #                    {ru.EVENT: 'exec_start'             }],
-    #   'exec_rp'     : [{ru.EVENT: 'exec_start'             },
-    #                    {ru.EVENT: 'cu_start'               }],
+    #   'exec_queue'  : [{ru.EVENT: 'schedule_ok'     },
+    #                    {ru.EVENT: s.AGENT_EXECUTING }],
+    #   'exec_prep'   : [{ru.EVENT: s.AGENT_EXECUTING },
+    #                    {ru.EVENT: 'exec_start'      }],
+    #   'exec_rp'     : [{ru.EVENT: 'exec_start'      },
+    #                    {ru.EVENT: 'cu_start'        }],
     #
     # then we convert this into the following structure:
     #
     # [
     #   # event                          from         to
     #   [{ru.EVENT: 'schedule_ok'    },  None,        'exec_queue'],
-    #   [{ru.STATE: s.AGENT_EXECUTING}, 'exec_queue', 'exec_prep'],
+    #   [{ru.EVENT: s.AGENT_EXECUTING}, 'exec_queue', 'exec_prep'],
     #   [{ru.EVENT: 'exec_start'     }, 'exec_prep',  'exec_rp'],
     #   [{ru.EVENT: 'cu_start'       }, 'exec_rp',    'None]
     # ]

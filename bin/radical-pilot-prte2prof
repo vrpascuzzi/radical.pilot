@@ -104,9 +104,9 @@ def handle_line(prof, line, pid, idmap):
         uid    = idmap.get(tid, pid)
         uid    = uid.replace(',', '.')
 
-        prof.prof('prte_%s' % event, uid=uid, state='AGENT_EXECUTING',
-                  # timestamp=tstamp, comp='prte.dvm', tid=dvm, msg=node)
-                  ts=tstamp, comp='prte.dvm', tid=dvm, msg=node)
+        prof.prof('prte_%s' % event, uid=uid, entity='task',
+                  ts=tstamp, msg='%s:%s' % (dvm, node))
+
     except Exception as e:
         print('skip line: %s' % str(e))
         print(line)
