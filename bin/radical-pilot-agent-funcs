@@ -10,6 +10,8 @@ import multiprocessing as mp
 import threading       as mt
 
 import radical.utils   as ru
+from radical.pilot import constants as rpc
+import radical.pilot.utils     as rpu
 
 # wtf
 import queue
@@ -36,7 +38,7 @@ if ve and ve not in ['', 'None', None]:
 
 # ------------------------------------------------------------------------------
 #
-class Executor(object):
+class Executor(rpu.Component):
     '''
     This executor is running as an RP task and owns a complete node.  On each
     core of that node, it spawns a worker process to execute function calls.
@@ -104,6 +106,9 @@ class Executor(object):
         # signal for thread termination
         self._term = mt.Event()
 
+        # also listen on the command channel for task cancellation requests
+        self.register_subscriber(rpc.CONTROL_PUBSUB, self._control_cb)
+
         # start threads to feed / drain the workers
         self._t_get_work    = mt.Thread(target=self._get_work)
         self._t_get_results = mt.Thread(target=self._get_results)
@@ -132,6 +137,26 @@ class Executor(object):
 
     # --------------------------------------------------------------------------
     #
+    def _control_cb(self, topic, msg):
+
+        self._log.info('command_cb [%s]: %s', topic, msg)
+
+        cmd = msg['cmd']
+        arg = msg['arg']
+
+        if cmd == 'terminate':
+
+            self._term.set()
+            self._log.info("Terminating Workers command (%s)" % arg)
+            self._log.info("Terminating Workers command (%s)" % arg)
+            for worker in self._workers:
+                worker.terminate()
+                worker.join()
+
+
+
+    # --------------------------------------------------------------------------
+    #
     def run(self):
         '''
         executor main loop: initialize all connections, processes, threads, then
@@ -151,14 +176,16 @@ class Executor(object):
 
                     self._prof.prof('cmd', uid=self._uid, msg=msg['cmd'])
 
-                    if msg['cmd'] == 'term':
+                    if msg['cmd'] == 'terminate':
 
-                        sys.exit(0)
+                        self._term.set()
+                        break
 
                     else:
                         self._log.error('unknown command %s', msg)
 
         finally:
+            self._log.debug('Terminating Workers now')
 
             # kill worker processes
             for worker in self._workers:

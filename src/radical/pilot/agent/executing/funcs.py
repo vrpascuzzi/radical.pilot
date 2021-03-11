@@ -20,6 +20,7 @@ from ..   import LaunchMethod
 
 from .base           import AgentExecutingComponent
 
+_pids = list()
 
 # ------------------------------------------------------------------------------
 #
@@ -33,6 +34,28 @@ class FUNCS(AgentExecutingComponent) :
 
         self._collector = None
         self._terminate = mt.Event()
+
+
+    # --------------------------------------------------------------------------
+    #
+    def __exit__(self, exc_type, exc_value, traceback):
+
+        self._log.debug("\nInside __exit__") 
+        self._log.debug("\nExecution type:", exc_type) 
+        self._log.debug("\nExecution value:", exc_value) 
+        self._log.debug("\nTraceback:", traceback) 
+
+        self._log.debug('exit is registerd sending signal "terminate workers"')
+        
+        self.publish(rpc.CONTROL_PUBSUB, {'cmd': 'terminate',
+                                          'arg':  None})
+        self._terminate.set()
+
+        for pid in _pids:
+            try:           
+               os.killpg(pid, signal.SIGTERM)
+            except: 
+               pass
 
 
     # --------------------------------------------------------------------------
@@ -51,11 +74,14 @@ class FUNCS(AgentExecutingComponent) :
         self.register_publisher (rpc.AGENT_UNSCHEDULE_PUBSUB)
         self.register_subscriber(rpc.CONTROL_PUBSUB, self.command_cb)
 
-        req_cfg = ru.read_json('funcs_req_queue.cfg')
-        res_cfg = ru.read_json('funcs_res_queue.cfg')
+        req_cfg  = ru.read_json('funcs_req_queue.cfg')
+        res_cfg  = ru.read_json('funcs_res_queue.cfg')
+        ctrl_cfg = ru.read_json('control_pubsub.cfg') 
 
-        self._req_queue = ru.zmq.Putter('funcs_req_queue', req_cfg['put'])
-        self._res_queue = ru.zmq.Getter('funcs_res_queue', res_cfg['get'])
+        self._req_queue  = ru.zmq.Putter('funcs_req_queue', req_cfg['put'])
+        self._res_queue  = ru.zmq.Getter('funcs_res_queue', res_cfg['get'])
+        self._ctrl_queue = ru.zmq.Putter('control_pubsub',  ctrl_cfg['pub'])
+
 
         self._cancel_lock     = ru.RLock()
         self._tasks_to_cancel = list()
@@ -124,6 +150,7 @@ class FUNCS(AgentExecutingComponent) :
             self._log.info("cancel_tasks command (%s)" % arg)
             with self._cancel_lock:
                 self._tasks_to_cancel.extend(arg['uids'])
+           
 
         return True
 
@@ -191,6 +218,9 @@ class FUNCS(AgentExecutingComponent) :
 
         self._prof.prof('exec_ok', uid=funcs['uid'])
 
+        # store pid for last-effort termination
+        _pids.append(funcs['proc'].pid)
+
 
     # --------------------------------------------------------------------------
     #
@@ -229,7 +259,6 @@ class FUNCS(AgentExecutingComponent) :
                              publish=True, push=True)
             else:
                 time.sleep(0.1)
-
 
 # ------------------------------------------------------------------------------
 
