@@ -14,6 +14,27 @@ from ...   import constants as rpc
 from ..launch_method import LaunchMethod
 from .base           import AgentSchedulingComponent
 
+# NOTE:
+#   on running MPI tasks via flux
+#   https://github.com/flux-framework/flux-core/discussions/3098
+#
+#   on task exit codes
+#   https://github.com/flux-framework/flux-core/discussions/3407
+#
+#   on flux configuration / resilience
+#   https://github.com/flux-framework/flux-core/discussions/3480
+#
+#   on data staging via flux
+#   https://github.com/flux-framework/flux-core/discussions/3232
+#
+# FIXME:
+#
+#   move submission code to executor, so that we have launch methods available
+#   for setting up MPI launch env (see above)
+#
+#   change executor to use James' `FluxExecutor` class
+#
+
 
 # ------------------------------------------------------------------------------
 #
