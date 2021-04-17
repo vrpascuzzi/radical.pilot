@@ -811,7 +811,9 @@ class Default(PMGRLaunchingComponent):
 
         # ----------------------------------------------------------------------
         # pilot description and resource configuration
-        number_cores    = pilot['description']['cores']
+        partitions      = ru.as_list(pilot['description']['cores'])
+        self._log.debug('=== partitions: %s', partitions)
+        number_cores    = sum(partitions)
         number_gpus     = pilot['description']['gpus']
         required_memory = pilot['description']['memory']
         runtime         = pilot['description']['runtime']
@@ -1067,6 +1069,7 @@ class Default(PMGRLaunchingComponent):
 
         bootstrap_args += " -p '%s'" % pid
         bootstrap_args += " -s '%s'" % sid
+        bootstrap_args += " -n '%s'" % ','.join([str(x) for x in partitions])
         bootstrap_args += " -m '%s'" % virtenv_mode
         bootstrap_args += " -r '%s'" % rp_version
         bootstrap_args += " -b '%s'" % python_dist
@@ -1090,7 +1093,6 @@ class Default(PMGRLaunchingComponent):
 
         agent_cfg['owner']               = 'agent.0'
         agent_cfg['resource']            = resource
-        agent_cfg['cores']               = number_cores
         agent_cfg['gpus']                = number_gpus
         agent_cfg['spawner']             = agent_spawner
         agent_cfg['scheduler']           = agent_scheduler
@@ -1125,7 +1127,7 @@ class Default(PMGRLaunchingComponent):
         # ----------------------------------------------------------------------
         # Write agent config dict to a json file in pilot sandbox.
 
-        agent_cfg_name = 'agent.0.cfg'
+        agent_cfg_name = 'partitions.cfg'
         cfg_tmp_handle, cfg_tmp_file = tempfile.mkstemp(prefix='rp.agent_cfg.')
         os.close(cfg_tmp_handle)  # file exists now
 

@@ -15,7 +15,7 @@ import radical.pilot as rp
 
 # ------------------------------------------------------------------------------
 #
-def bootstrap_3(aid):
+def bootstrap_4(aid):
     """
     This method continues where the bootstrap_0/1/2 left off, and will now pass
     control to the Agent class which will spawn the functional components.
@@ -81,7 +81,7 @@ if __name__ == "__main__":
     if len(sys.argv) != 2:
         raise RuntimeError('missing parameter: agent id')
 
-    bootstrap_3(sys.argv[1])
+    bootstrap_4(sys.argv[1])
 
 
 # ------------------------------------------------------------------------------

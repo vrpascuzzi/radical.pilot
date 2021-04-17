@@ -87,6 +87,7 @@ SDISTS=
 RUNTIME=
 VIRTENV=
 VIRTENV_MODE=
+PARTITIONS=
 CCM=
 PILOT_ID=
 RP_VERSION=
@@ -96,7 +97,7 @@ VIRTENV_DIST=
 SESSION_ID=
 SESSION_SANDBOX=
 PILOT_SANDBOX=`pwd`
-PREBOOTSTRAP2=""
+PREBOOTSTRAP1=""
 
 # NOTE:  $HOME is set to the job sandbox on OSG.  Bah!
 # FIXME: the need for this needs to be reconfirmed and documented
@@ -1407,13 +1408,13 @@ pre_bootstrap_0()
 
 # -------------------------------------------------------------------------------
 #
-# Build the PREBOOTSTRAP2 variable to pass down to sub-agents
+# Build the PREBOOTSTRAP1 variable to pass down to sub-agents
 #
-pre_bootstrap_2()
+pre_bootstrap_1()
 {
     cmd="$@"
 
-    PREBOOTSTRAP2="$PREBOOTSTRAP2
+    PREBOOTSTRAP1="$PREBOOTSTRAP1
 $cmd"
 }
 
@@ -1448,6 +1449,7 @@ untar()
 #    -h   hostport to create tunnel to
 #    -i   python Interpreter to use, e.g., python2.7
 #    -m   mode of stack installion
+#    -n   partitions
 #    -p   pilot ID
 #    -r   radical-pilot version version to install in virtenv
 #    -s   session ID
@@ -1460,7 +1462,7 @@ untar()
 #
 # NOTE: -z makes some assumptions on sandbox and tarball location
 #
-while getopts "a:b:cd:e:f:g:h:i:m:p:r:s:t:v:w:x:y:z:" OPTION; do
+while getopts "a:b:cd:e:f:g:h:i:m:n:p:r:s:t:v:w:x:y:z:" OPTION; do
     case $OPTION in
         a)  SESSION_SANDBOX="$OPTARG"         ;;
         b)  PYTHON_DIST="$OPTARG"             ;;
@@ -1472,12 +1474,13 @@ while getopts "a:b:cd:e:f:g:h:i:m:p:r:s:t:v:w:x:y:z:" OPTION; do
         h)  HOSTPORT="$OPTARG"                ;;
         i)  PYTHON="$OPTARG"                  ;;
         m)  VIRTENV_MODE="$OPTARG"            ;;
+        n)  PARTITIONS="$OPTARG"              ;;
         p)  PILOT_ID="$OPTARG"                ;;
         r)  RP_VERSION="$OPTARG"              ;;
         s)  SESSION_ID="$OPTARG"              ;;
         t)  TUNNEL_BIND_DEVICE="$OPTARG"      ;;
         v)  VIRTENV=$(eval echo "$OPTARG")    ;;
-        w)  pre_bootstrap_2 "$OPTARG"         ;;
+        w)  pre_bootstrap_1 "$OPTARG"         ;;
         x)  CLEANUP="$OPTARG"                 ;;
         y)  RUNTIME="$OPTARG"                 ;;
         z)  TARBALL="$OPTARG"                 ;;
@@ -1524,7 +1527,7 @@ touch "$PROFILES_TARBALL"
 
 
 # At this point, all pre_bootstrap_0 commands have been executed.  We copy the
-# resulting PATH and LD_LIBRARY_PATH, and apply that in bootstrap_2.sh, so that
+# resulting PATH and LD_LIBRARY_PATH, and apply that in bootstrap_1.sh, so that
 # the sub-agents start off with the same env (or at least the relevant parts of
 # it).
 #
@@ -1692,13 +1695,8 @@ virtenv_activate "$VIRTENV" "$PYTHON_DIST"
 #       have re-implemented pip... :/
 # FIXME: the second option should use $RP_MOD_PATH, or should derive the path
 #       from the imported rp modules __file__.
-PILOT_SCRIPT=`which radical-pilot-agent`
-# if test "$RP_INSTALL_TARGET" = 'PILOT_SANDBOX'
-# then
-#     PILOT_SCRIPT="$PILOT_SANDBOX/rp_install/bin/radical-pilot-agent"
-# else
-#     PILOT_SCRIPT="$VIRTENV/rp_install/bin/radical-pilot-agent"
-# fi
+PARTITION_SCRIPT=`which radical-pilot-partition`
+AGENT_SCRIPT=`which radical-pilot-agent`
 
 # after all is said and done, we should end up with a usable python version.
 # Verify it
@@ -1707,24 +1705,22 @@ verify_install
 # we should have a better `gtod` now
 test -z $(which radical-gtod) || cp $(which radical-gtod ./gtod)
 
-AGENT_CMD="$PYTHON $PILOT_SCRIPT"
-
 verify_rp_install
 
 # TODO: (re)move this output?
 echo
 echo "# -------------------------------------------------------------------"
-echo "# Launching radical-pilot-agent "
-echo "# CMDLINE: $AGENT_CMD"
+echo "# Launching radical-pilot-partition "
+echo "# CMDLINE: $PARTITION_SCRIPT"
 
-# At this point we expand the variables in $PREBOOTSTRAP2 to pick up the
+# At this point we expand the variables in $PREBOOTSTRAP1 to pick up the
 # changes made by the environment by pre_bootstrap_0.
 OLD_IFS=$IFS
 IFS=$'\n'
-for entry in $PREBOOTSTRAP2
+for entry in $PREBOOTSTRAP1
 do
     converted_entry=`eval echo $entry`
-    PREBOOTSTRAP2_EXPANDED="$PREBOOTSTRAP2_EXPANDED
+    PREBOOTSTRAP1_EXPANDED="$PREBOOTSTRAP1_EXPANDED
 $converted_entry"
 done
 IFS=$OLD_IFS
@@ -1741,7 +1737,7 @@ fi
 echo "ntphost: $RADICAL_PILOT_NTPHOST"
 ping -c 1 "$RADICAL_PILOT_NTPHOST" || true  # ignore errors
 
-# Before we start the (sub-)agent proper, we'll create a bootstrap_2.sh script
+# Before we start the (sub-)agent proper, we'll create a bootstrap_1.sh script
 # to do so.  For a single agent this is not needed -- but in the case where
 # we spawn out additional agent instances later, that script can be reused to
 # get proper # env settings etc, w/o running through bootstrap_0 again.
@@ -1761,9 +1757,11 @@ else
     BS_SHELL='/bin/sh'
 fi
 
-cat > bootstrap_2.sh <<EOT
+# ------------------------------------------------------------------------------
+cat > bootstrap_1.sh <<EOT
 #!$BS_SHELL
 
+# launch the partitioner which paves the way for the agents
 # disable user site packages as those can conflict with our virtualenv
 export PYTHONNOUSERSITE=True
 
@@ -1802,14 +1800,66 @@ export RADICAL_PILOT_NTPHOST=$RADICAL_PILOT_NTPHOST
 
 # pass environment variables down so that module load becomes effective at
 # the other side too (e.g. sub-agents).
-$PREBOOTSTRAP2_EXPANDED
+$PREBOOTSTRAP1_EXPANDED
 
 # start agent, forward arguments
 # NOTE: exec only makes sense in the last line of the script
-exec $AGENT_CMD "\$1" 1>"\$1.out" 2>"\$1.err"
+exec $PYTHON $PARTITION_SCRIPT "$PARTITIONS" 1>partition.out 2>&1
 
 EOT
-chmod 0755 bootstrap_2.sh
+chmod 0755 bootstrap_1.sh
+
+# ------------------------------------------------------------------------------
+cat > bootstrap_3.sh <<EOT
+#!$BS_SHELL
+
+# launch an agent on a specific partition
+# disable user site packages as those can conflict with our virtualenv
+export PYTHONNOUSERSITE=True
+
+# make sure we use the correct sandbox
+cd $PILOT_SANDBOX
+
+# apply some env settings as stored after running pre_bootstrap_0 commands
+export PATH="$PB1_PATH"
+export LD_LIBRARY_PATH="$PB1_LDLB"
+
+# activate virtenv
+if test "$PYTHON_DIST" = "anaconda" && ! test -z $(which conda)
+then
+    eval "\$(conda shell.posix hook)"
+    conda activate $VIRTENV
+else
+    . $VIRTENV/bin/activate
+fi
+
+# make sure rp_install is used
+export PYTHONPATH=$PYTHONPATH
+export PATH=$PATH
+
+# run agent in debug mode
+# FIXME: make option again?
+export RADICAL_VERBOSE=DEBUG
+export RADICAL_UTIL_VERBOSE=DEBUG
+export RADICAL_PILOT_VERBOSE=DEBUG
+
+# the agent will *always* use the dburl from the config file, not from the env
+# FIXME: can we better define preference in the session ctor?
+unset RADICAL_PILOT_DBURL
+
+# avoid ntphost lookups on compute nodes
+export RADICAL_PILOT_NTPHOST=$RADICAL_PILOT_NTPHOST
+
+# pass environment variables down so that module load becomes effective at
+# the other side too (e.g. sub-agents).
+$PREBOOTSTRAP1_EXPANDED
+
+# start agent, forward arguments
+# NOTE: exec only makes sense in the last line of the script
+exec $PYTHON $AGENT_SCRIPT "\$1" 1>"\$1.out" 2>&1
+
+EOT
+chmod 0755 bootstrap_3.sh
 # ------------------------------------------------------------------------------
 
 #
@@ -1890,13 +1940,13 @@ create_deactivate
 # start the master agent instance (zero)
 profile_event 'bootstrap_0_ok'
 if test -z "$CCM"; then
-    ./bootstrap_2.sh 'agent.0'    \
-                   1> agent.0.bootstrap_2.out \
-                   2> agent.0.bootstrap_2.err &
+    ./bootstrap_1.sh \
+                   1> partition.bootstrap_1.out \
+                   2> partition.bootstrap_1.err &
 else
-    ccmrun ./bootstrap_2.sh 'agent.0'    \
-                   1> agent.0.bootstrap_2.out \
-                   2> agent.0.bootstrap_2.err &
+    ccmrun ./bootstrap_1.sh \
+                   1> partition.bootstrap_1.out \
+                   2> partition.bootstrap_1.err &
 fi
 AGENT_PID=$!
 

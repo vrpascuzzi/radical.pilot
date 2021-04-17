@@ -237,6 +237,7 @@ setup_args = {
                             'bin/radical-pilot-stats',
                             'bin/radical-pilot-stats.plot',
                             'bin/radical-pilot-version',
+                            'bin/radical-pilot-partition',
                             'bin/radical-pilot-agent',
                             'bin/radical-pilot-agent-funcs',
                             'bin/radical-pilot-agent-statepush',

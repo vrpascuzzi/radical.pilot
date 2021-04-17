@@ -101,8 +101,9 @@ class PilotDescription(ru.Description):
 
     .. data:: cores
 
-       [Type: `int`] [**mandatory**] The number of cores the pilot should
-       allocate on the target resource.
+       [Type: `list[int]`] [**mandatory**] The number of cores the pilot should
+       allocate for each partition on the target resource.  If a single integer
+       is given, the pilot will have one partition with that size.
 
        NOTE: for local pilots, you can set a number larger than the physical
        machine limit when setting `RADICAL_PILOT_PROFILE` in your environment.
@@ -198,7 +199,7 @@ class PilotDescription(ru.Description):
         RUNTIME         : int        ,
         APP_COMM        : [str]      ,
         SANDBOX         : str        ,
-        CORES           : int        ,
+        CORES           : [int]      ,
         GPUS            : int        ,
         MEMORY          : int        ,
         QUEUE           : str        ,
@@ -220,7 +221,7 @@ class PilotDescription(ru.Description):
         RUNTIME         : 10         ,
         APP_COMM        : []         ,
         SANDBOX         : None       ,
-        CORES           : 1          ,
+        CORES           : [1]        ,
         GPUS            : 0          ,
         MEMORY          : 0          ,
         QUEUE           : None       ,
