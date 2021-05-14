@@ -1,6 +1,6 @@
 
-__copyright__ = "Copyright 2013-2016, http://radical.rutgers.edu"
-__license__   = "MIT"
+__copyright__ = 'Copyright 2013-2021, The RADICAL-Cybertools Team'
+__license__   = 'MIT'
 
 
 import os
@@ -20,21 +20,13 @@ from .base import AgentExecutingComponent
 #
 class Shell(AgentExecutingComponent):
 
-
-    # --------------------------------------------------------------------------
-    #
-    def __init__(self, cfg, session):
-
-        AgentExecutingComponent.__init__ (self, cfg, session)
-
-
     # --------------------------------------------------------------------------
     #
     def initialize(self):
 
         self._pwd = os.getcwd()
 
-        self.register_input(rps.EXECUTING_PENDING,
+        self.register_input(rps.AGENT_EXECUTING_PENDING,
                             rpc.AGENT_EXECUTING_QUEUE, self.work)
 
         self.register_output(rps.AGENT_STAGING_OUTPUT_PENDING,
@@ -304,7 +296,7 @@ class Shell(AgentExecutingComponent):
         env  += "export RP_SPAWNER_ID=%s\n"      % self.uid
         env  += "export RP_TASK_ID=%s\n"         % task['uid']
         env  += 'export RP_TASK_NAME="%s"\n'     % task['description'].get('name')
-        env  += 'export RP_GTOD="%s"\n'          % task['gtod']
+        env  += 'export RP_GTOD="%s"\n'          % self.gtod
         env  += 'export RP_PILOT_STAGING="%s"\n' % self._pwd
 
         if self._prof.enabled:
@@ -403,7 +395,7 @@ prof(){
     #
     def spawn(self, launcher, task):
 
-        sandbox = task['sandbox']
+        sandbox = task['task_sandbox_path']
 
         # prep stdout/err so that we can append w/o checking for None
         task['stdout'] = ''

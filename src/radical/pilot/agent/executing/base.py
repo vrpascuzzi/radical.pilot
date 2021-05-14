@@ -12,16 +12,12 @@ from ... import utils as rpu
 # ------------------------------------------------------------------------------
 # 'enum' for RP's spawner types
 EXECUTING_NAME_POPEN   = "POPEN"
+EXECUTING_NAME_POPENSH = "POPENSH"
 EXECUTING_NAME_SHELL   = "SHELL"
 EXECUTING_NAME_SHELLFS = "SHELLFS"
 EXECUTING_NAME_FLUX    = "FLUX"
 EXECUTING_NAME_SLEEP   = "SLEEP"
 EXECUTING_NAME_FUNCS   = "FUNCS"
-
-# archived
-#
-# EXECUTING_NAME_ABDS    = "ABDS"
-# EXECUTING_NAME_ORTE    = "ORTE"
 
 
 # ------------------------------------------------------------------------------
@@ -46,7 +42,6 @@ class AgentExecutingComponent(rpu.Component):
         # if so configured, let the Task know what to use as tmp dir
         self._task_tmp = cfg.get('task_tmp', os.environ.get('TMP', '/tmp'))
 
-
     # --------------------------------------------------------------------------
     #
     # This class-method creates the appropriate sub-class for the Spawner
@@ -61,25 +56,22 @@ class AgentExecutingComponent(rpu.Component):
             raise TypeError("Factory only available to base class!")
 
         from .popen    import Popen
+        from .popen_sh import PopenSH
         from .shell    import Shell
         from .shell_fs import ShellFS
         from .flux     import Flux
         from .funcs    import FUNCS
         from .sleep    import Sleep
 
-      # from .abds     import ABDS
-      # from .orte     import ORTE
-
         try:
             impl = {
                 EXECUTING_NAME_POPEN  : Popen,
+                EXECUTING_NAME_POPENSH: PopenSH,
                 EXECUTING_NAME_SHELL  : Shell,
                 EXECUTING_NAME_SHELLFS: ShellFS,
                 EXECUTING_NAME_FLUX   : Flux,
                 EXECUTING_NAME_SLEEP  : Sleep,
-                EXECUTING_NAME_FUNCS  : FUNCS,
-              # EXECUTING_NAME_ABDS   : ABDS,
-              # EXECUTING_NAME_ORTE   : ORTE,
+                EXECUTING_NAME_FUNCS  : FUNCS
             }[name]
             return impl(cfg, session)
 
@@ -87,6 +79,4 @@ class AgentExecutingComponent(rpu.Component):
             raise RuntimeError("AgentExecutingComponent '%s' unknown" % name) \
                 from e
 
-
 # ------------------------------------------------------------------------------
-

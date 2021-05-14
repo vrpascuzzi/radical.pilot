@@ -2,9 +2,8 @@
 # FIXME: review pylint directive - https://github.com/PyCQA/pylint/pull/2087
 #        (https://docs.python.org/3/library/subprocess.html#popen-constructor)
 
-__copyright__ = "Copyright 2013-2016, http://radical.rutgers.edu"
-__license__   = "MIT"
-
+__copyright__ = 'Copyright 2013-2021, The RADICAL-Cybertools Team'
+__license__   = 'MIT'
 
 import os
 import stat
@@ -15,16 +14,17 @@ import pprint
 import signal
 import tempfile
 import threading as mt
-# import subprocess
+import subprocess
 
 import radical.utils as ru
 
-from ...  import agent     as rpa
-from ...  import utils     as rpu
-from ...  import states    as rps
-from ...  import constants as rpc
+from ... import agent     as rpa
+from ... import utils     as rpu
+from ... import states    as rps
+from ... import constants as rpc
 
 from .base import AgentExecutingComponent
+from .launch_script_mixin import LaunchScriptMixin
 
 
 # ------------------------------------------------------------------------------
@@ -44,17 +44,7 @@ atexit.register(_kill)
 
 # ------------------------------------------------------------------------------
 #
-class Popen(AgentExecutingComponent) :
-
-    # --------------------------------------------------------------------------
-    #
-    def __init__(self, cfg, session):
-
-        self._watcher   = None
-        self._terminate = mt.Event()
-
-        AgentExecutingComponent.__init__ (self, cfg, session)
-
+class Popen(LaunchScriptMixin, AgentExecutingComponent):
 
     # --------------------------------------------------------------------------
     #
@@ -71,18 +61,16 @@ class Popen(AgentExecutingComponent) :
         self.register_publisher (rpc.AGENT_UNSCHEDULE_PUBSUB)
         self.register_subscriber(rpc.CONTROL_PUBSUB, self.command_cb)
 
-        self._cancel_lock        = ru.RLock()
-        self._tasks_to_cancel    = list()
-        self._tasks_to_terminate = list()
-        self._tasks_to_watch     = list()
-        self._watch_queue        = queue.Queue()
+        self._cancel_lock     = mt.RLock()
+        self._tasks_to_cancel = list()
+        self._tasks_to_watch  = list()
+        self._watch_queue     = queue.Queue()
 
         self._pid = self._cfg['pid']
 
         # run watcher thread
-        self._watcher = mt.Thread(target=self._watch)
-      # self._watcher.daemon = True
-        self._watcher.start()
+        watcher = mt.Thread(target=self._watch)
+        watcher.start()
 
         # The AgentExecutingComponent needs the LaunchMethod to construct
         # commands.
@@ -96,7 +84,7 @@ class Popen(AgentExecutingComponent) :
                 cfg     = self._cfg,
                 session = self._session)
 
-        self.gtod   = "%s/gtod" % self._pwd
+        self.gtod   = '%s/gtod' % self._pwd
         self.tmpdir = tempfile.gettempdir()
 
 
@@ -111,7 +99,7 @@ class Popen(AgentExecutingComponent) :
 
         if cmd == 'cancel_tasks':
 
-            self._log.info("cancel_tasks command (%s)" % arg)
+            self._log.info('cancel_tasks command (%s)' % arg)
             with self._cancel_lock:
                 self._tasks_to_cancel.extend(arg['uids'])
 
@@ -190,8 +178,8 @@ class Popen(AgentExecutingComponent) :
     #
     def spawn(self, launcher, task):
 
-        td      = task['description']
-        tid     = task['uid']
+        tid  = task['uid']
+        td   = task['description']
         sbox = task['task_sandbox_path']
 
         # make sure the sandbox exists
@@ -202,131 +190,40 @@ class Popen(AgentExecutingComponent) :
         launch_script_name = '%s/%s.sh' % (sbox, tid)
         slots_fname        = '%s/%s.sl' % (sbox, tid)
 
-        self._log.debug("Created launch_script: %s", launch_script_name)
+        self._log.debug('Launch script name: %s', launch_script_name)
 
-        # prep stdout/err so that we can append w/o checking for None
-        task['stdout'] = ''
-        task['stderr'] = ''
+        # The actual command line, constructed per launch-method
+        try:
+            launch_command, hop_cmd = launcher.construct_command(
+                task, launch_script_name)
+            cmdline = hop_cmd if hop_cmd else launch_script_name
+        except Exception as e:
+            msg = 'Error in spawner (%s)' % e
+            self._log.exception(msg)
+            raise RuntimeError(msg) from e
 
-        with open(slots_fname, "w") as launch_script:
-            launch_script.write('\n%s\n\n' % pprint.pformat(task['slots']))
+        launch_script_str  = '#!/bin/sh\n'
+        launch_script_str += self.script_env(task)
 
-        with open(launch_script_name, "w") as launch_script:
+        launch_script_str += '\nprof task_start\n'
+        launch_script_str += '\n# Change to task sandbox\ncd %s\n' % sbox
+        # FIXME: task_pre_exec should be LM specific
+        if self._cfg.get('task_pre_exec'):
+            launch_script_str += '\n'.join(self._cfg['task_pre_exec']) + '\n'
 
-            launch_script.write('#!/bin/sh\n\n')
+        launch_script_str += self.script_pre_exec(task)
+        launch_script_str += self.script_task_exec(launch_command)
+        launch_script_str += self.script_post_exec(task)
 
-            # Create string for environment variable setting
-            env_string = ''
-          # env_string += '. %s/env.orig\n'                % self._pwd
-            env_string += 'env > env\n'
-            env_string += '. %s/env.task\n'                % self._pwd
-            env_string += 'export RADICAL_BASE="%s"\n'     % self._pwd
-            env_string += 'export RP_SESSION_ID="%s"\n'    % self._cfg['sid']
-            env_string += 'export RP_PILOT_ID="%s"\n'      % self._cfg['pid']
-            env_string += 'export RP_AGENT_ID="%s"\n'      % self._cfg['aid']
-            env_string += 'export RP_SPAWNER_ID="%s"\n'    % self.uid
-            env_string += 'export RP_TASK_ID="%s"\n'       % tid
-            env_string += 'export RP_TASK_NAME="%s"\n'     % td.get('name')
-            env_string += 'export RP_GTOD="%s"\n'          % self.gtod
-            env_string += 'export RP_TMP="%s"\n'           % self._task_tmp
-            env_string += 'export RP_PILOT_SANDBOX="%s"\n' % self._pwd
-            env_string += 'export RP_PILOT_STAGING="%s"\n' % self._pwd
+        launch_script_str += '\n# Exit script with command return code\n'
+        launch_script_str += 'prof task_stop\n'
+        launch_script_str += 'exit $RETVAL\n'
 
-            if self._prof.enabled:
-                env_string += 'export RP_PROF="%s/%s.prof"\n' % (sbox, tid)
+        with open(slots_fname, 'w') as fd:
+            fd.write('\n%s\n' % pprint.pformat(task['slots']))
 
-            else:
-                env_string += 'unset  RP_PROF\n'
-
-            if 'RP_APP_TUNNEL' in os.environ:
-                env_string += 'export RP_APP_TUNNEL="%s"\n' \
-                        % os.environ['RP_APP_TUNNEL']
-
-            env_string += '''
-prof(){
-    if test -z "$RP_PROF"
-    then
-        return
-    fi
-    event=$1
-    msg=$2
-    now=$($RP_GTOD)
-    echo "$now,$event,task_script,MainThread,$RP_TASK_ID,AGENT_EXECUTING,$msg" >> $RP_PROF
-}
-'''
-
-            # FIXME: this should be set by an LaunchMethod filter or something
-            env_string += 'export OMP_NUM_THREADS="%s"\n' % td['cpu_threads']
-
-            # The actual command line, constructed per launch-method
-            try:
-                launch_command, hop_cmd = launcher.construct_command(task,
-                                                             launch_script_name)
-
-                if hop_cmd : cmdline = hop_cmd
-                else       : cmdline = launch_script_name
-
-            except Exception as e:
-                msg = "Error in spawner (%s)" % e
-                self._log.exception(msg)
-                raise RuntimeError (msg) from e
-
-            # also add any env vars requested in the task description
-            if td['environment']:
-                for key, val in td['environment'].items():
-                    env_string += 'export %s="%s"\n' % (key, val)
-
-            launch_script.write('\n# Environment variables\n%s\n' % env_string)
-            launch_script.write('prof task_start\n')
-            launch_script.write('\n# Change to task sandbox\ncd %s\n' % sbox)
-
-            # FIXME: task_pre_exec should be LM specific
-            if self._cfg.get('task_pre_exec'):
-                for val in self._cfg['task_pre_exec']:
-                    launch_script.write("%s\n"  % val)
-
-            if td['pre_exec']:
-                fail = ' (echo "pre_exec failed"; false) || exit'
-                pre  = ''
-                for elem in td['pre_exec']:
-                    pre += "%s || %s\n" % (elem, fail)
-                # Note: extra spaces below are for visual alignment
-                launch_script.write("\n# Pre-exec commands\n")
-                launch_script.write('prof task_pre_start\n')
-                launch_script.write(pre)
-                launch_script.write('prof task_pre_stop\n')
-
-            # prepare stdout/stderr
-            stdout_file = td.get('stdout') or '%s.out' % task['uid']
-            stderr_file = td.get('stderr') or '%s.err' % task['uid']
-
-            task['stdout_file'] = os.path.join(sbox, stdout_file)
-            task['stderr_file'] = os.path.join(sbox, stderr_file)
-
-            # cu_exec launch command
-            launch_script.write("\n# The command to run\n")
-            launch_script.write('prof task_exec_start\n')
-            launch_script.write(
-                '%s 1> %s 2> %s\n' %
-                (launch_command, task['stdout_file'], task['stderr_file']))
-            launch_script.write('RETVAL=$?\n')
-            launch_script.write('prof task_exec_stop\n')
-
-            # After the universe dies the infrared death, there will be nothing
-            if td['post_exec']:
-                fail = ' (echo "post_exec failed"; false) || exit'
-                post = ''
-                for elem in td['post_exec']:
-                    post += "%s || %s\n" % (elem, fail)
-                launch_script.write("\n# Post-exec commands\n")
-                launch_script.write('prof task_post_start\n')
-                launch_script.write('%s\n' % post)
-                launch_script.write('prof task_post_stop "$ret=RETVAL"\n')
-
-            launch_script.write("\n# Exit script with command return code\n")
-            launch_script.write("prof task_stop\n")
-            launch_script.write("echo $RETVAL > ../run_done/$RP_TASK_ID\n")
-
+        with open(launch_script_name, 'w') as fd:
+            fd.write(launch_script_str)
         # done writing to launch script, get it ready for execution.
         st = os.stat(launch_script_name)
         os.chmod(launch_script_name, st.st_mode | stat.S_IEXEC)
@@ -338,26 +235,25 @@ prof(){
         task['stdout_file'] = os.path.join(sbox, stdout_file)
         task['stderr_file'] = os.path.join(sbox, stderr_file)
 
-      # _stdout_file_h = open(task['stdout_file'], 'a')
-      # _stderr_file_h = open(task['stderr_file'], 'a')
+        _stdout_file_h = open(task['stdout_file'], 'a')
+        _stderr_file_h = open(task['stderr_file'], 'a')
 
-        self._log.info("Launching task %s via %s in %s", tid, cmdline, sbox)
+        self._log.info('Launching task %s via %s', tid, cmdline)
+
         self._prof.prof('exec_start', uid=tid)
-        os.system('cp %s run_queue/' % launch_script_name)
-        task['proc'] = 0
-      # task['proc'] = subprocess.Popen(args       = cmdline,
-      #                               executable = None,
-      #                               stdin      = None,
-      #                               stdout     = _stdout_file_h,
-      #                               stderr     = _stderr_file_h,
-      #                               preexec_fn = os.setsid,
-      #                               close_fds  = True,
-      #                               shell      = True,
-      #                               cwd        = sbox)
+        task['proc'] = subprocess.Popen(args       = cmdline,
+                                        executable = None,
+                                        stdin      = None,
+                                        stdout     = _stdout_file_h,
+                                        stderr     = _stderr_file_h,
+                                        preexec_fn = os.setsid,
+                                        close_fds  = True,
+                                        shell      = True,
+                                        cwd        = sbox)
         self._prof.prof('exec_ok', uid=tid)
 
         # store pid for last-effort termination
-      # _pids.append(task['proc'].pid)
+        _pids.append(task['proc'].pid)
 
         self._watch_queue.put(task)
 
@@ -367,7 +263,7 @@ prof(){
     def _watch(self):
 
         try:
-            while not self._terminate.is_set():
+            while not self._term.is_set():
 
                 tasks = list()
                 try:
@@ -412,30 +308,9 @@ prof(){
         action = 0
         for task in self._tasks_to_watch:
 
-            tid   = task['uid']
-            descr = task['description']
-
-            try:
-                if not os.path.exists('run_done/%s' % tid):
-                    if tid in self._tasks_to_terminate:
-                        exit_code = -1
-                    else:
-                        stderr_file = '%s/%s' % \
-                            (tid, descr.get('stderr') or '%s.err' % tid)
-                        out, _, _ = ru.sh_callout('tail -n5 %s' % stderr_file)
-                        if 'Caught signal Terminated' in out:
-                            exit_code = -1
-                            self._tasks_to_terminate.extend(
-                                [x['uid'] for x in self._tasks_to_watch])
-                        else:
-                            continue
-                else:
-                    os.system('mv run_done/%s run_final/%s' % (tid, tid))
-                    with open('run_final/%s' % tid, 'r') as fin:
-                        exit_code = int(fin.read().strip())
-            except Exception as e:
-                self._log.exception('ERROR during the state check: %s' % e)
-                continue
+            # poll subprocess object
+            exit_code = task['proc'].poll()
+            tid       = task['uid']
 
             if exit_code is None:
                 # Process is still running
@@ -453,20 +328,20 @@ prof(){
                     # method)
                   # task['proc'].kill()
                     action += 1
-                  # try:
-                  #     os.killpg(task['proc'].pid, signal.SIGTERM)
-                  # except OSError:
-                        # unit is already gone, we ignore this
-                  #     pass
-                  # task['proc'].wait()  # make sure proc is collected
+                    try:
+                        os.killpg(task['proc'].pid, signal.SIGTERM)
+                    except OSError:
+                        # task is already gone, we ignore this
+                        pass
+                    task['proc'].wait()  # make sure proc is collected
 
                     with self._cancel_lock:
                         self._tasks_to_cancel.remove(tid)
 
                     self._prof.prof('exec_cancel_stop', uid=tid)
 
-                 #  del(task['proc'])  # proc is not json serializable
-                    self._prof.prof('unschedule_start', uid=task['uid'])
+                    del(task['proc'])  # proc is not json serializable
+                    self._prof.prof('unschedule_start', uid=tid)
                     self.publish(rpc.AGENT_UNSCHEDULE_PUBSUB, task)
                     self.advance(task, rps.CANCELED, publish=True, push=False)
 
@@ -478,17 +353,17 @@ prof(){
                 self._prof.prof('exec_stop', uid=tid)
 
                 # make sure proc is collected
-              # task['proc'].wait()
+                task['proc'].wait()
 
                 # we have a valid return code -- task is final
                 action += 1
-                self._log.info("Task %s has return code %s.", tid, exit_code)
+                self._log.info('Task %s has return code %s.', tid, exit_code)
 
                 task['exit_code'] = exit_code
 
                 # Free the Slots, Flee the Flots, Ree the Frots!
                 self._tasks_to_watch.remove(task)
-                # del(task['proc'])  # proc is not json serializable
+                del(task['proc'])  # proc is not json serializable
                 self._prof.prof('unschedule_start', uid=tid)
                 self.publish(rpc.AGENT_UNSCHEDULE_PUBSUB, task)
 
@@ -508,6 +383,4 @@ prof(){
 
         return action
 
-
 # ------------------------------------------------------------------------------
-
