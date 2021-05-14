@@ -56,6 +56,6 @@
         "stage_cacerts"               : true,
         "cores_per_node"              : 128,
         "gpus_per_node"               : 8,
-        "system_architecture"         : {"options": ["gpumps", "nvme"]}
+        "system_architecture"         : {"options": [["mig-mode=True"]]}
     }
 }
