@@ -25,6 +25,7 @@ class Cobalt(ResourceManager):
     def _configure(self):
 
         try:
+            # this env variable is used for GPU nodes
             with open(os.environ['COBALT_NODEFILE'], 'r') as f:
                 node_list = [node.strip() for node in f.readlines() if node]
         except KeyError:
@@ -34,17 +35,17 @@ class Cobalt(ResourceManager):
             # Another option is to run `aprun` with the rank of nodes
             # we *think* we have, and with `-N 1` to place one rank per node,
             # and run `hostname` - that gives the list of hostnames.
-            # The number of nodes we receive from `$COBALT_PARTSIZE`.
-          # out, _, _ = ru.sh_callout('aprun -q -n %d -N 1 hostname' % n_nodes)
-          # node_list = out.split()
+            # (The number of nodes we receive from `$COBALT_PARTSIZE`.)
+            #   out = ru.sh_callout('aprun -q -n %d -N 1 hostname' % n_nodes)[0]
+            #   node_list = out.split()
 
-      # # we also want to learn the core count per node
-      # cmd              = 'cat /proc/cpuinfo | grep processor | wc -l'
-      # out, _, _        = ru.sh_callout('aprun -q -n %d -N 1 %s' % (n_nodes, cmd))
-      # core_counts      = set([int(x) for x in out.split()])
-      # print('=== out 2 : [%s] [%s]' % (out, core_counts))
-      # assert(len(core_counts) == 1), core_counts
-      # cores_per_node   = core_counts[0]
+        # get info about core count per node:
+        #   cmd = 'cat /proc/cpuinfo | grep processor | wc -l'
+        #   out = ru.sh_callout('aprun -q -n %d -N 1 %s' % (n_nodes, cmd))[0]
+        #   core_counts = set([int(x) for x in out.split()])
+        #   print('=== out 2 : [%s] [%s]' % (out, core_counts))
+        #   assert(len(core_counts) == 1), core_counts
+        #   cores_per_node = core_counts[0]
 
         # node names are unique, so can serve as node uids
         self.node_list      = [[node, node] for node in node_list]

@@ -16,7 +16,7 @@
         "agent_config"                : "default",
         "agent_scheduler"             : "CONTINUOUS",
         "agent_spawner"               : "POPENSH",
-        "agent_launch_method"         : "APRUN",
+        "agent_launch_method"         : "SSH",
         "task_launch_method"          : "APRUN",
         "mpi_launch_method"           : "APRUN",
         "pre_bootstrap_0"             : [
@@ -44,9 +44,9 @@
         "agent_config"                : "default",
         "agent_scheduler"             : "CONTINUOUS",
         "agent_spawner"               : "POPENSH",
-        "agent_launch_method"         : "MPIEXEC",
-        "task_launch_method"          : "MPIEXEC",
-        "mpi_launch_method"           : "MPIEXEC",
+        "agent_launch_method"         : "SSH",
+        "task_launch_method"          : "MPIRUN",
+        "mpi_launch_method"           : "MPIRUN",
         "pre_bootstrap_0"             : [
             ". /home/$USER/.miniconda3/etc/profile.d/conda.sh"
         ],
