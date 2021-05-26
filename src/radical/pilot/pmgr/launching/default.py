@@ -13,7 +13,6 @@ import shutil
 import tempfile
 
 import radical.saga            as rs
-import radical.saga.filesystem as rsfs
 import radical.utils           as ru
 
 from ...  import states        as rps
@@ -62,7 +61,6 @@ class Default(PMGRLaunchingComponent):
         self._pilots_lock   = ru.RLock()  # lock on maipulating the above
         self._checking      = list()      # pilots to check state on
         self._check_lock    = ru.RLock()  # lock on maipulating the above
-        self._saga_fs_cache = dict()      # cache of saga directories
         self._saga_js_cache = dict()      # cache of saga job services
         self._sandboxes     = dict()      # cache of resource sandbox URLs
         self._cache_lock    = ru.RLock()  # lock for cache
@@ -132,21 +130,7 @@ class Default(PMGRLaunchingComponent):
 
         self._log.debug('launcher got %s', msg)
 
-        if cmd == 'pilot_staging_input_request':
-
-            self._handle_pilot_input_staging(arg['pilot'], arg['sds'])
-            self.publish(rpc.CONTROL_PUBSUB,
-                         {'cmd': 'pilot_staging_input_result',
-                          'arg': {'pilot': pilot,
-                                  'sds'  : sds}})
-
-
-        if cmd == 'pilot_staging_output_request':
-
-            self._handle_pilot_output_staging(arg['pilot'], arg['sds'])
-
-
-        elif cmd == 'cancel_pilots':
+        if cmd == 'cancel_pilots':
 
             # on cancel_pilot requests, we forward the DB entries via MongoDB,
             # by pushing a pilot update.  We also mark the pilot for
@@ -174,6 +158,157 @@ class Default(PMGRLaunchingComponent):
 
     # --------------------------------------------------------------------------
     #
+    def _handle_pilot_input_staging(self, pilot, sds):
+
+        pid = pilot['uid']
+
+        # NOTE: no task sandboxes defined!
+        src_context = {'pwd'     : pilot['client_sandbox'],
+                       'pilot'   : pilot['pilot_sandbox'],
+                       'resource': pilot['resource_sandbox']}
+        tgt_context = {'pwd'     : pilot['pilot_sandbox'],
+                       'pilot'   : pilot['pilot_sandbox'],
+                       'resource': pilot['resource_sandbox']}
+
+        # Iterate over all directives
+        for sd in sds:
+
+            # TODO: respect flags in directive
+
+            action = sd['action']
+            flags  = sd['flags']
+            did    = sd['uid']
+            src    = sd['source']
+            tgt    = sd['target']
+
+            assert(action in [rpc.COPY, rpc.LINK, rpc.MOVE, rpc.TRANSFER])
+
+            self._prof.prof('staging_in_start', uid=pid, msg=did)
+
+            src = complete_url(src, src_context, self._log)
+            tgt = complete_url(tgt, tgt_context, self._log)
+
+            if action in [rpc.COPY, rpc.LINK, rpc.MOVE]:
+                self._prof.prof('staging_in_fail', uid=pid, msg=did)
+                raise ValueError("invalid action '%s' on pilot level" % action)
+
+            self._log.info('transfer %s to %s', src, tgt)
+
+            # FIXME: make sure that tgt URL points to the right resource
+            # FIXME: honor sd flags if given (recursive...)
+            flags = rsfs.CREATE_PARENTS
+
+            if os.path.isdir(src.path):
+                flags |= rsfs.RECURSIVE
+
+            # Define and open the staging directory for the pilot
+            # We use the target dir construct here, so that we can create
+            # the directory if it does not yet exist.
+
+            # url used for cache (sandbox url w/o path)
+            fs_url      = rs.Url(pilot['pilot_sandbox'])
+            fs_url.path = '/'
+            key         = str(fs_url)
+
+            self._log.debug("rs.file.Directory ('%s')", key)
+
+            with self._cache_lock:
+                if key in self._saga_fs_cache:
+                    fs = self._saga_fs_cache[key]
+
+                else:
+                    fs = rsfs.Directory(fs_url, session=self._session)
+                    self._saga_fs_cache[key] = fs
+
+            fs.copy(src, tgt, flags=flags)
+
+            sd['state'] = rps.DONE
+
+            self._prof.prof('staging_in_stop', uid=pid, msg=did)
+
+        self.publish(rpc.CONTROL_PUBSUB, {'cmd': 'pilot_staging_input_result',
+                                          'arg': {'pilot': pilot,
+                                                  'sds'  : sds}})
+
+
+    # --------------------------------------------------------------------------
+    #
+    def _handle_pilot_output_staging(self, pilot, sds):
+
+        pid = pilot['uid']
+
+        # NOTE: no task sandboxes defined!
+        src_context = {'pwd'     : pilot['pilot_sandbox'],
+                       'pilot'   : pilot['pilot_sandbox'],
+                       'resource': pilot['resource_sandbox']}
+        tgt_context = {'pwd'     : pilot['client_sandbox'],
+                       'pilot'   : pilot['pilot_sandbox'],
+                       'resource': pilot['resource_sandbox']}
+
+        # Iterate over all directives
+        for sd in sds:
+
+            try:
+
+                action = sd['action']
+                flags  = sd['flags']
+                did    = sd['uid']
+                src    = sd['source']
+                tgt    = sd['target']
+
+                assert(action in [rpc.COPY, rpc.LINK, rpc.MOVE, rpc.TRANSFER])
+
+                self._prof.prof('staging_out_start', uid=pid, msg=did)
+
+                if action in [rpc.COPY, rpc.LINK, rpc.MOVE]:
+                    raise ValueError("invalid pilot action '%s'" % action)
+
+                src = complete_url(src, src_context, self._log)
+                tgt = complete_url(tgt, tgt_context, self._log)
+
+                self._log.info('transfer %s to %s', src, tgt)
+
+                # FIXME: make sure that tgt URL points to the right resource
+                # FIXME: honor sd flags if given (recursive...)
+                flags = rsfs.CREATE_PARENTS
+
+                if os.path.isdir(src.path):
+                    flags |= rsfs.RECURSIVE
+
+                # Define and open the staging directory for the pilot
+
+                # url used for cache (sandbox url w/o path)
+                fs_url      = rs.Url(pilot['pilot_sandbox'])
+                fs_url.path = '/'
+                key         = str(fs_url)
+
+                with self._cache_lock:
+                    if key in self._saga_fs_cache:
+                        fs = self._saga_fs_cache[key]
+
+                    else:
+                        fs = rsfs.Directory(fs_url, session=self._session)
+                        self._saga_fs_cache[key] = fs
+
+                fs.copy(src, tgt, flags=flags)
+
+                sd['state'] = rps.DONE
+                self._prof.prof('staging_out_stop', uid=pid, msg=did)
+
+            except:
+                self._log.exception('pilot level staging failed')
+                self._prof.prof('staging_out_fail', uid=pid, msg=did)
+                sd['state'] = rps.FAILED
+
+
+            self.publish(rpc.CONTROL_PUBSUB,
+                         {'cmd': 'pilot_staging_output_result',
+                          'arg': {'pilot': pilot,
+                                  'sds'  : [sd]}})
+
+
+    # --------------------------------------------------------------------------
+    #
     def _pilot_watcher_cb(self):
 
         # FIXME: we should actually use SAGA job state notifications!
@@ -194,12 +329,10 @@ class Default(PMGRLaunchingComponent):
         # we don't want to lock our members all the time.  For that reason we
         # use a copy of the pilots_tocheck list and iterate over that, and only
         # lock other members when they are manipulated.
-
         tc = rs.job.Container()
         with self._pilots_lock, self._check_lock:
 
             for pid in self._checking:
-
                 tc.add(self._pilots[pid]['job'])
 
         states = tc.get_states()
@@ -218,7 +351,7 @@ class Default(PMGRLaunchingComponent):
             for pid in self._checking:
 
                 state = self._pilots[pid]['job'].state
-                self._log.debug('saga job state: %s %s', pid, state)
+                self._log.debug('saga job state: %s %s %s', pid, self._pilots[pid]['job'],  state)
 
                 if state in [rs.job.DONE, rs.job.FAILED, rs.job.CANCELED]:
                     pilot = self._pilots[pid]['pilot']
@@ -425,7 +558,8 @@ class Default(PMGRLaunchingComponent):
 
                     self._start_pilot_bulk(resource, schema, pilots)
 
-                    self.advance(pilots, rps.PMGR_ACTIVE_PENDING, push=False, publish=True)
+                    self.advance(pilots, rps.PMGR_ACTIVE_PENDING,
+                                         push=False, publish=True)
 
                 except Exception:
                     self._log.exception('bulk launch failed')
@@ -435,50 +569,16 @@ class Default(PMGRLaunchingComponent):
     # --------------------------------------------------------------------------
     #
     def _start_pilot_bulk(self, resource, schema, pilots):
-        """
+        '''
         For each pilot, we prepare by determining what files need to be staged,
-        and what job description needs to be submitted.
+        and what job description needs to be submitted.  Files are then be
+        staged, and jobs are submitted.
 
-        We expect `_prepare_pilot(resource, pilot)` to return a dict with:
-
-            {
-              'js' : saga.job.Description,
-              'fts': [
-                { 'src': string  # absolute source file name
-                  'tgt': string  # relative target file name
-                  'rem': bool    # shall we remove src?
-                },
-                ...
-              ],
-              'sds': [
-                <rp staging directive>
-                ...
-              ]
-            }
-
-        When transfering data, we'll ensure that each src is only transferred
-        once (in fact, we put all src files into a tarball and unpack that on
-        the target side).
-
-        The returned dicts are expected to only contain files which actually
-        need staging, ie. which have not been staged during a previous pilot
-        submission.  That implies one of two things: either this component is
-        stateful, and remembers what has been staged -- which makes it difficult
-        to use multiple component instances; or the component inspects the
-        target resource for existing files -- which involves additional
-        expensive remote hops.
-        FIXME: since neither is implemented at this point we won't discuss the
-               tradeoffs further -- right now files are unique per pilot bulk.
-
-        Once all dicts are collected, we create one additional file which
-        contains the staging information, and then pack all src files into
-        a tarball for staging.  We transfer the tarball, and *immediately*
-        trigger the untaring on the target resource, which is thus *not* part of
-        the bootstrapping process.
-        NOTE: this is to avoid untaring race conditions for multiple pilots, and
-              also to simplify bootstrapping dependencies -- the bootstrappers
-              are likely within the tarball after all...
-        """
+        Two files are staged: a bootstrapper and a tarball - the latter
+        containing the pilot sandboxes, agent configs, and any other auxilliary
+        files needed to bootstrap.  The bootstrapper will untar those parts of
+        the tarball which it needs to bootstrap one specific pilot.
+        '''
 
         rcfg = self._session.get_resource_config(resource, schema)
         sid  = self._session.uid
@@ -520,25 +620,28 @@ class Default(PMGRLaunchingComponent):
         # then tar it up.  Once we untar that tarball on the target machine, we
         # should have all sandboxes and all files required to bootstrap the
         # pilots
-        # FIXME: on untar, there is a race between multiple launcher components
-        #        within the same session toward the same target resource.
-        tmp_dir  = os.path.abspath(tempfile.mkdtemp(prefix='rp_agent_tar_dir'))
-        tar_name = '%s.%s.tgz' % (sid, self.uid)
+        tmp_dir  = os.path.abspath(tempfile.mkdtemp(prefix='rp_agent_tmp'))
+        tar_name = '%s.%s.tgz' % (sid, self._uid)
         tar_tgt  = '%s/%s'     % (tmp_dir, tar_name)
         tar_url  = rs.Url('file://localhost/%s' % tar_tgt)
 
         # we need the session sandbox url, but that is (at least in principle)
         # dependent on the schema to use for pilot startup.  So we confirm here
         # that the bulk is consistent wrt. to the schema.  Also include
-        # `staging_input` files and place them in the pilots' `staging_area`s.
+        # `staging_input` files and place them in the `pilot_sandbox`.
         #
-        # FIXME: may need to split into schema-specific sub-bulks
+        # FIXME: if it is not, it needs to be splitted into schema-specific
+        # sub-bulks
         #
-        schemas = set([p['description'].get('access_schema') for p in pilots])
-        assert(len(schemas) == 1), \
-               'inconsistent schemas on launch: %s' % schemas
+        schema = pd.get('access_schema')
+        for pilot in pilots[1:]:
+            assert(schema == pilot['description'].get('access_schema')), \
+                    'inconsistent scheme on launch / staging'
 
-        # get and expand sandboxes
+        # get and expand sandboxes (this bulk uses the same schema toward the
+        # same target resource, so all session sandboxes are the same)
+        # FIXME: expansion actually may differ per pilot (queue names, project
+        #        names, etc could be expanded)
         session_sandbox = self._session._get_session_sandbox(pilots[0]).path
         session_sandbox = session_sandbox % expand
 
@@ -549,7 +652,7 @@ class Default(PMGRLaunchingComponent):
         #
         # We also create a file `staging_output.json` for each pilot which
         # contains the list of files to be tarred up and prepared for output
-        # staging
+        # staging.
 
         ft_list = list()  # files to stage
         jd_list = list()  # jobs  to submit
@@ -569,7 +672,7 @@ class Default(PMGRLaunchingComponent):
             for fname in ru.as_list(pilot['description'].get('input_staging')):
                 base = os.path.basename(fname)
                 ft_list.append({'src': fname,
-                                'tgt': '%s/staging_area/%s' % (pid, base),
+                                'tgt': '%s/%s' % (pid, base),
                                 'rem': False})
 
             output_staging = pilot['description'].get('output_staging')
@@ -580,6 +683,9 @@ class Default(PMGRLaunchingComponent):
                         fout.write('%s\n' % entry)
 
             # direct staging, use first pilot for staging context
+            # NOTE: this implies that the SDS can only refer to session
+            #       sandboxes, not to pilot sandboxes!
+            self._log.debug('%s', info['sds'])
             self._stage_in(pilots[0], info['sds'])
 
         for ft in ft_list:
@@ -635,42 +741,8 @@ class Default(PMGRLaunchingComponent):
                                    'action': rpc.TRANSFER})
         shutil.rmtree(tmp_dir)
 
-     ## # NOTE: the untar was moved into the bootstrapper (see `-z`).  That
-     ## #       is actually only correct for the single-pilot case...
-     ## # TODO: one tarball per pilot
-     ## #
-     ## # we now need to untar on the target machine.
-     ## js_url = ru.Url(pilots[0]['js_url'])
-     ##
-     ## # well, we actually don't need to talk to the rm, but only need
-     ## # a shell on the headnode.  That seems true for all ResourceManager we use right
-     ## # now.  So, lets convert the URL:
-     ## if '+' in js_url.scheme:
-     ##     parts = js_url.scheme.split('+')
-     ##     if 'gsissh' in parts: js_url.scheme = 'gsissh'
-     ##     elif  'ssh' in parts: js_url.scheme = 'ssh'
-     ## else:
-     ##     # In the non-combined '+' case we need to distinguish between
-     ##     # a url that was the result of a hop or a local rm.
-     ##     if js_url.scheme not in ['ssh', 'gsissh']:
-     ##         js_url.scheme = 'fork'
-     ##         js_url.host   = 'localhost'
-     ##
-     ## with self._cache_lock:
-     ##     if  js_url in self._saga_js_cache:
-     ##         js_tmp  = self._saga_js_cache[js_url]
-     ##     else:
-     ##         js_tmp  = rs.job.Service(js_url, session=self._session)
-     ##         self._saga_js_cache[js_url] = js_tmp
-     ##
-     ## cmd = "tar zmxvf %s/%s -C / ; rm -f %s" % \
-     ## cmd = "tar zmxvf %s/%s -C %s" % \
-     ##         (session_sandbox, tar_name, session_sandbox)
-     ## j = js_tmp.run_job(cmd)
-     ## j.wait()
-     ##
-     ## self._log.debug('tar cmd : %s', cmd)
-     ## self._log.debug('tar done: %s, %s, %s', j.state, j.stdout, j.stderr)
+        # FIXME: the untar was moved into the bootstrapper (see `-z`).  That
+        #        is actually only correct for the single-pilot case...
 
         for pilot in pilots:
             self._prof.prof('staging_in_stop',  uid=pilot['uid'])
@@ -696,23 +768,16 @@ class Default(PMGRLaunchingComponent):
 
         jc.run()
 
-        for j,jd in zip(jc.get_tasks(), jd_list):
+        # Order of tasks in `rs.job.Container().tasks` is not changing over the
+        # time, thus it's able to iterate over it and other list(s) all together
+        for j, pilot in zip(jc.get_tasks(), pilots):
 
             # do a quick error check
             if j.state == rs.FAILED:
                 self._log.error('%s: %s : %s : %s', j.id, j.state, j.stderr, j.stdout)
-                raise RuntimeError("SAGA Job state is FAILED. (%s)" % jd.name)
+                raise RuntimeError("SAGA Job state is FAILED. (%s)" % j.name)
 
-            self._log.debug('%s - %s state: %s', j.id, j.name, j.state)
-
-            pilot = None
-            pid   = jd.name
-            for p in pilots:
-                if p['uid'] == pid:
-                    pilot = p
-                    break
-
-            assert(pilot)
+            pid = pilot['uid']
 
             # Update the Pilot's state to 'PMGR_ACTIVE_PENDING' if SAGA job
             # submission was successful.  Since the pilot leaves the scope of
@@ -770,7 +835,7 @@ class Default(PMGRLaunchingComponent):
         agent_launch_method     = rcfg.get('agent_launch_method')
         agent_dburl             = rcfg.get('agent_mongodb_endpoint', database_url)
         agent_spawner           = rcfg.get('agent_spawner',       DEFAULT_AGENT_SPAWNER)
-        rc_agent_config         = rcfg.get('agent_config',        DEFAULT_AGENT_CONFIG)
+        agent_config            = rcfg.get('agent_config',        DEFAULT_AGENT_CONFIG)
         agent_scheduler         = rcfg.get('agent_scheduler')
         tunnel_bind_device      = rcfg.get('tunnel_bind_device')
         default_queue           = rcfg.get('default_queue')
@@ -790,13 +855,13 @@ class Default(PMGRLaunchingComponent):
         lfs_size_per_node       = rcfg.get('lfs_size_per_node',  0)
         python_dist             = rcfg.get('python_dist')
         virtenv_dist            = rcfg.get('virtenv_dist',        DEFAULT_VIRTENV_DIST)
-        cu_tmp                  = rcfg.get('cu_tmp')
+        task_tmp                  = rcfg.get('task_tmp')
         spmd_variation          = rcfg.get('spmd_variation')
         shared_filesystem       = rcfg.get('shared_filesystem', True)
         stage_cacerts           = rcfg.get('stage_cacerts', False)
-        cu_pre_exec             = rcfg.get('cu_pre_exec')
-        cu_post_exec            = rcfg.get('cu_post_exec')
-        export_to_cu            = rcfg.get('export_to_cu')
+        task_pre_exec             = rcfg.get('task_pre_exec')
+        task_post_exec            = rcfg.get('task_post_exec')
+        export_to_task            = rcfg.get('export_to_task')
         mandatory_args          = rcfg.get('mandatory_args', [])
         system_architecture     = rcfg.get('system_architecture', {})
         saga_jd_supplement      = rcfg.get('saga_jd_supplement', {})
@@ -827,32 +892,25 @@ class Default(PMGRLaunchingComponent):
         pilot_sandbox    = pilot_sandbox   .path % expand
       # client_sandbox   = client_sandbox  # not expanded
 
-        # Agent configuration that is not part of the public API.
-        # The agent config can either be a config dict, or
-        # a string pointing to a configuration name.  If neither
-        # is given, check if 'RADICAL_PILOT_AGENT_CONFIG' is
-        # set.  The last fallback is 'agent_default'
-        agent_config = pilot['description'].get('_config')
-        if not agent_config:
-            agent_config = os.environ.get('RADICAL_PILOT_AGENT_CONFIG')
-        if not agent_config:
-            agent_config = rc_agent_config
-
         if not job_name:
             job_name = pid
 
-        if isinstance(agent_config, dict):
-            # use dict as is
-            agent_cfg = agent_config
+        try:
+            if isinstance(agent_config, dict):
+                agent_cfg = ru.Config(cfg=agent_config)
 
-        elif isinstance(agent_config, str):
-            agent_cfg = ru.Config('radical.pilot',
-                                  category='agent',
-                                  name=agent_config)
+            elif isinstance(agent_config, str):
+                agent_cfg = ru.Config('radical.pilot',
+                                      category='agent',
+                                      name=agent_config)
+            else:
+                # we can't handle this type
+                raise TypeError('agent config must be string or dict')
 
-        else:
-            # we can't handle this type
-            raise TypeError('agent config must be string (config name) or dict')
+        except Exception:
+            self._log.exception('Error using agent config')
+            raise
+
 
         # expand variables in virtenv string
         virtenv = virtenv % {'pilot_sandbox'   : pilot_sandbox,
@@ -957,7 +1015,7 @@ class Default(PMGRLaunchingComponent):
 
         if  cleanup and isinstance(cleanup, bool):
             #  l : log files
-            #  u : unit work dirs
+            #  u : task work dirs
             #  v : virtualenv
             #  e : everything (== pilot sandbox)
             if shared_filesystem:
@@ -1043,6 +1101,7 @@ class Default(PMGRLaunchingComponent):
             bootstrap_args += " -w '%s'" % arg
 
         agent_cfg['owner']               = 'agent.0'
+        agent_cfg['resource']            = resource
         agent_cfg['cores']               = number_cores
         agent_cfg['gpus']                = number_gpus
         agent_cfg['spawner']             = agent_spawner
@@ -1065,10 +1124,10 @@ class Default(PMGRLaunchingComponent):
         agent_cfg['gpus_per_node']       = gpus_per_node
         agent_cfg['lfs_path_per_node']   = lfs_path_per_node
         agent_cfg['lfs_size_per_node']   = lfs_size_per_node
-        agent_cfg['cu_tmp']              = cu_tmp
-        agent_cfg['export_to_cu']        = export_to_cu
-        agent_cfg['cu_pre_exec']         = cu_pre_exec
-        agent_cfg['cu_post_exec']        = cu_post_exec
+        agent_cfg['task_tmp']            = task_tmp
+        agent_cfg['export_to_task']        = export_to_task
+        agent_cfg['task_pre_exec']       = task_pre_exec
+        agent_cfg['task_post_exec']      = task_post_exec
         agent_cfg['resource_cfg']        = copy.deepcopy(rcfg)
         agent_cfg['debug']               = self._log.getEffectiveLevel()
 
@@ -1084,12 +1143,22 @@ class Default(PMGRLaunchingComponent):
 
         # Convert dict to json file
         self._log.debug("Write agent cfg to '%s'.", cfg_tmp_file)
-        self._log.debug(pprint.pformat(agent_cfg))
         ru.write_json(agent_cfg, cfg_tmp_file)
 
-        ret['fts'].append({'src': cfg_tmp_file,
-                           'tgt': '%s/%s' % (pilot_sandbox, agent_cfg_name),
-                           'rem': True})  # purge the tmp file after packing
+        # always stage agent cfg for each pilot, not in the tarball
+        # FIXME: purge the tmp file after staging
+        self._log.debug('cfg %s -> %s', agent_cfg['pid'], pilot_sandbox)
+        ret['sds'].append({'source': cfg_tmp_file,
+                           'target': '%s/%s' % (pilot['pilot_sandbox'], agent_cfg_name),
+                           'action': rpc.TRANSFER})
+
+        # always stage the bootstrapper for each pilot, not in the tarball
+        # FIXME: this results in many staging ops for many pilots
+        bootstrapper_path = os.path.abspath("%s/agent/bootstrap_0.sh"
+                                           % self._root_dir)
+        ret['sds'].append({'source': bootstrapper_path,
+                           'target': '%s/bootstrap_0.sh' % pilot['pilot_sandbox'],
+                           'action': rpc.TRANSFER})
 
         # ----------------------------------------------------------------------
         # we also touch the log and profile tarballs in the target pilot sandbox
@@ -1109,55 +1178,47 @@ class Default(PMGRLaunchingComponent):
         #
         # NOTE: this will race when multiple pilot launcher instances are used!
         #
-        with self._cache_lock:
+        if resource not in self._sandboxes:
 
-            if resource not in self._sandboxes:
+            for sdist in sdist_paths:
+                base = os.path.basename(sdist)
+                ret['fts'].append({
+                    'src': sdist,
+                    'tgt': '%s/%s' % (session_sandbox, base),
+                    'rem': False
+                })
 
-                tgt_path = ru.Url(pilot['session_sandbox']).path
+            # Copy the bootstrap shell script.
+            bootstrapper_path = os.path.abspath("%s/agent/bootstrap_0.sh"
+                              % self._root_dir)
+            ret['fts'].append({'src': bootstrapper_path,
+                               'tgt': session_sandbox,
+                               'rem': False
+            })
 
-                for sdist in sdist_paths:
-                    base = os.path.basename(sdist)
-                    tgt  = '%s/%s' % (tgt_path, base)
-                    ret['fts'].append({
-                        'src': sdist,
-                        'tgt': '%s/%s' % (session_sandbox, base),
-                        'rem': False
-                    })
+            # Some machines cannot run pip due to outdated CA certs.
+            # For those, we also stage an updated certificate bundle
+            # TODO: use booleans all the way?
+            if stage_cacerts:
 
-                # Some machines cannot run pip due to outdated CA certs.
-                # For those, we also stage an updated certificate bundle
-                # TODO: use booleans all the way?
-                if stage_cacerts:
+                certs = 'cacert.pem.gz'
+                cpath = os.path.abspath("%s/agent/%s" % (self._root_dir, certs))
+                self._log.debug("use CAs %s", cpath)
 
-                    certs = 'cacert.pem.gz'
-                    cpath = os.path.abspath("%s/agent/%s" % (self._root_dir, certs))
-                    self._log.debug("use CAs %s", cpath)
+                ret['fts'].append({'src': cpath,
+                                   'tgt': '%s/%s' % (session_sandbox, certs),
+                                   'rem': False})
 
-                    tgt = '%s/%s' % (tgt_path, certs)
-                    ret['fts'].append({'src': cpath,
-                                       'tgt': tgt,
-                                       'rem': False})
-
-                self._sandboxes[resource] = True
-
-        # always stage the bootstrapper for each pilot, but *not* in the tarball
-        bootstrapper_path = os.path.abspath("%s/agent/bootstrap_0.sh"
-                                           % self._root_dir)
-        tgt = '%s/bootstrap_0.sh' % pilot['pilot_sandbox']
-        ret['sds'].append({'source': bootstrapper_path,
-                           'target': tgt,
-                           'action': rpc.TRANSFER})
+            self._sandboxes[resource] = True
 
         # ----------------------------------------------------------------------
         # Create SAGA Job description and submit the pilot job
 
         jd = rs.job.Description()
 
-        bootstrap_tgt = '%s/bootstrap_0.sh' % pilot_sandbox
-
         jd.name                  = job_name
         jd.executable            = "/bin/bash"
-        jd.arguments             = ['-l %s %s' % (bootstrap_tgt, bootstrap_args)]
+        jd.arguments             = ['-l ./bootstrap_0.sh %s' % bootstrap_args]
         jd.working_directory     = pilot_sandbox
         jd.project               = project
         jd.output                = "bootstrap_0.out"
@@ -1173,6 +1234,12 @@ class Default(PMGRLaunchingComponent):
         jd.environment           = dict()
         jd.system_architecture   = system_architecture
 
+        # register used resources in DB (enacted on next advance)
+        pilot['resources'] = {'cpu': number_cores,
+                              'gpu': number_gpus}
+        pilot['$set']      = ['resources']
+
+
         # we set any saga_jd_supplement keys which are not already set above
         for key, val in saga_jd_supplement.items():
             if not jd[key]:
@@ -1187,8 +1254,12 @@ class Default(PMGRLaunchingComponent):
             except Exception as e:
                 self._log.debug('SAGA SMT not set: %s' % e)
 
+        # job description environment variable(s) setup
+
         if self._prof.enabled:
             jd.environment['RADICAL_PROFILE'] = 'TRUE'
+
+        jd.environment['RADICAL_BASE'] = resource_sandbox
 
         # for condor backends and the like which do not have shared FSs, we add
         # additional staging directives so that the backend system binds the
@@ -1232,7 +1303,7 @@ class Default(PMGRLaunchingComponent):
         '''
 
         resource_sandbox = self._session._get_resource_sandbox(pilot)
-        session_sandbox  = self._session._get_session_sandbox (pilot)
+      # session_sandbox  = self._session._get_session_sandbox (pilot)
         pilot_sandbox    = self._session._get_pilot_sandbox   (pilot)
         client_sandbox   = self._session._get_client_sandbox()
 
@@ -1251,8 +1322,6 @@ class Default(PMGRLaunchingComponent):
 
         for sd in sds:
             sd['prof_id'] = pilot['uid']
-
-        for sd in sds:
             sd['source'] = str(complete_url(sd['source'], loc_ctx, self._log))
             sd['target'] = str(complete_url(sd['target'], rem_ctx, self._log))
 
@@ -1267,17 +1336,17 @@ class Default(PMGRLaunchingComponent):
         '''
 
         resource_sandbox = self._session._get_resource_sandbox(pilot)
-        session_sandbox  = self._session._get_session_sandbox (pilot)
+      # session_sandbox  = self._session._get_session_sandbox (pilot)
         pilot_sandbox    = self._session._get_pilot_sandbox   (pilot)
         client_sandbox   = self._session._get_client_sandbox()
 
         # contexts for staging url expansion
-        loc_ctx = {'pwd'     : pilot_sandbox,
+        loc_ctx = {'pwd'     : client_sandbox,
                    'client'  : client_sandbox,
                    'pilot'   : pilot_sandbox,
                    'resource': resource_sandbox}
 
-        rem_ctx = {'pwd'     : client_sandbox,
+        rem_ctx = {'pwd'     : pilot_sandbox,
                    'client'  : client_sandbox,
                    'pilot'   : pilot_sandbox,
                    'resource': resource_sandbox}
@@ -1288,8 +1357,8 @@ class Default(PMGRLaunchingComponent):
             sd['prof_id'] = pilot['uid']
 
         for sd in sds:
-            sd['source'] = str(complete_url(sd['source'], self._rem_ctx, self._log))
-            sd['target'] = str(complete_url(sd['target'], self._loc_ctx, self._log))
+            sd['source'] = str(complete_url(sd['source'], rem_ctx, self._log))
+            sd['target'] = str(complete_url(sd['target'], loc_ctx, self._log))
 
         self._stage(sds)
 
@@ -1340,18 +1409,12 @@ class Default(PMGRLaunchingComponent):
 
         if cmd == 'staging_result':
 
-            sds = arg['sds']
-            states = {sd['uid']: sd['state'] for sd in self._active_sds.values()}
-
             with self._sds_lock:
                 for sd in arg['sds']:
                     if sd['uid'] in self._active_sds:
                         self._active_sds[sd['uid']]['state'] = sd['state']
 
-            states = {sd['uid']: sd['state'] for sd in self._active_sds.values()}
-
         return True
 
 
 # ------------------------------------------------------------------------------
-

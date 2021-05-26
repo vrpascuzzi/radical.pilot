@@ -18,6 +18,7 @@ LM_NAME_CCMRUN        = 'CCMRUN'
 LM_NAME_FORK          = 'FORK'
 LM_NAME_IBRUN         = 'IBRUN'
 LM_NAME_MPIEXEC       = 'MPIEXEC'
+LM_NAME_MPIEXEC_MPT   = 'MPIEXEC_MPT'
 LM_NAME_MPIRUN        = 'MPIRUN'
 LM_NAME_MPIRUN_MPT    = 'MPIRUN_MPT'
 LM_NAME_MPIRUN_CCMRUN = 'MPIRUN_CCMRUN'
@@ -54,14 +55,13 @@ class LaunchMethod(object):
 
     # List of environment variables that designated Launch Methods should export
     # FIXME: we should find out what env vars are changed or added by
-    #        cud.pre_exec, and then should also export those.  That would make
+    #        td.pre_exec, and then should also export those.  That would make
     #        our launch script ore complicated though...
     EXPORT_ENV_VARIABLES = [
         'LD_LIBRARY_PATH',
         'PATH',
         'PYTHONPATH',
         'OMP_NUM_THREADS',
-        'CUDA_VISIBLE_DEVICES',
         'RP_AGENT_ID',
         'RP_GTOD',
         'RP_PILOT_ID',
@@ -70,8 +70,8 @@ class LaunchMethod(object):
         'RP_SESSION_ID',
         'RP_SPAWNER_ID',
         'RP_TMP',
-        'RP_UNIT_ID',
-        'RP_UNIT_NAME',
+        'RP_TASK_ID',
+        'RP_TASK_NAME',
         'RP_PILOT_SANDBOX',
         'RADICAL_BASE'
     ]
@@ -90,7 +90,7 @@ class LaunchMethod(object):
         self._log     = self._session._log    # pylint: disable=protected-access
         self._log.debug('create LaunchMethod: %s', type(self))
 
-        # A per-launch_method list of env vars to remove from the CU env
+        # A per-launch_method list of env vars to remove from the Task env
         self.env_removables = []
 
         self._configure()
@@ -152,6 +152,7 @@ class LaunchMethod(object):
                 LM_NAME_FORK          : Fork,
                 LM_NAME_IBRUN         : IBRun,
                 LM_NAME_MPIEXEC       : MPIExec,
+                LM_NAME_MPIEXEC_MPT   : MPIExec,
                 LM_NAME_MPIRUN        : MPIRun,
                 LM_NAME_MPIRUN_CCMRUN : MPIRun,
                 LM_NAME_MPIRUN_RSH    : MPIRun,
@@ -284,7 +285,14 @@ class LaunchMethod(object):
 
     # --------------------------------------------------------------------------
     #
-    def construct_command(self, cu, launch_script_hop):
+    def get_rank_cmd(self):
+
+        raise NotImplementedError("incomplete LaunchMethod %s" % self.name)
+
+
+    # --------------------------------------------------------------------------
+    #
+    def construct_command(self, t, launch_script_hop):
 
         raise NotImplementedError("incomplete LaunchMethod %s" % self.name)
 
@@ -296,7 +304,7 @@ class LaunchMethod(object):
                          impaired=False):
 
         # Open appropriately named temporary file
-        # NOTE: we make an assumption about the unit sandbox here
+        # NOTE: we make an assumption about the task sandbox here
         filename = '%s/%s.hosts' % (sandbox, uid)
         with open(filename, 'w') as fout:
 
@@ -355,7 +363,7 @@ class LaunchMethod(object):
     #
     def _create_arg_string(self, args):
 
-        # unit Arguments (if any)
+        # task Arguments (if any)
         arg_string = ''
         if args:
             for arg in args:
@@ -406,6 +414,12 @@ class LaunchMethod(object):
 
         if not ret:
             for line in out.splitlines():
+                if 'intel(r) mpi library for linux' in line.lower():
+                    # Intel MPI is hydra based
+                    version = line.split(',')[1].strip()
+                    flavor  = self.MPI_FLAVOR_HYDRA
+                    break
+
                 if 'hydra build details:' in line.lower():
                     version = line.split(':', 1)[1].strip()
                     flavor  = self.MPI_FLAVOR_HYDRA
@@ -416,20 +430,21 @@ class LaunchMethod(object):
                     flavor  = self.MPI_FLAVOR_HYDRA
                     break
 
-                if 'version:' in line.lower():
-                    version = line.split(':', 1)[1].strip()
-                    flavor  = self.MPI_FLAVOR_OMPI
-                    break
-
                 if '(open mpi)' in line.lower():
                     version = line.split(')', 1)[1].strip()
                     flavor  = self.MPI_FLAVOR_OMPI
                     break
 
+                if 'version:' in line.lower():
+                    version = line.split(':', 1)[1].strip()
+                    flavor  = self.MPI_FLAVOR_OMPI
+                    break
+
+        self._log.debug('mpi details [%s]: %s', exe, out)
+        self._log.debug('mpi version: %s [%s]', version, flavor)
+
         if not flavor:
             raise RuntimeError('cannot identify MPI flavor [%s]' % exe)
-
-        self._log.debug('mpi version: %s [%s]', version, flavor)
 
         return version, flavor
 

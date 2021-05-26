@@ -52,13 +52,13 @@ class SSH(LaunchMethod):
 
     # --------------------------------------------------------------------------
     #
-    def construct_command(self, cu, launch_script_hop):
+    def construct_command(self, t, launch_script_hop):
 
-        slots        = cu['slots']
-        cud          = cu['description']
-        task_exec    = cud['executable']
-        task_env     = cud.get('environment') or dict()
-        task_args    = cud.get('arguments')   or list()
+        slots        = t['slots']
+        td          = t['description']
+        task_exec    = td['executable']
+        task_env     = td.get('environment') or dict()
+        task_args    = td.get('arguments')   or list()
         task_argstr  = self._create_arg_string(task_args)
 
         if task_argstr: task_command = "%s %s" % (task_exec, task_argstr)
@@ -72,7 +72,7 @@ class SSH(LaunchMethod):
                               % (self.name, slots))
 
         if len(slots['nodes']) > 1:
-            raise RuntimeError('ssh cannot run multinode units')
+            raise RuntimeError('ssh cannot run multinode tasks')
 
         host = slots['nodes'][0]['name']
 
@@ -80,17 +80,22 @@ class SSH(LaunchMethod):
         # This is a crude version of env transplanting where we prep the
         # shell command line.  We likely won't survive any complicated vars
         # (multiline, quotes, etc)
-        env_string  = ' '.join(['%s=%s' % (var, os.environ[var])
-                                for var in self.EXPORT_ENV_VARIABLES
-                                if  var in os.environ])
-        env_string += ' '.join(['%s=%s' % (var, task_env[var])
-                                for var in task_env])
+        env_string = ' '.join(['%s=%s' % (var, os.environ[var])
+                               for var in self.EXPORT_ENV_VARIABLES
+                               if  var in os.environ])
+        if task_env:
+            env_string += ' ' + ' '.join(['%s=%s' % (var, task_env[var])
+                                          for var in task_env])
 
         ssh_hop_cmd = "%s %s %s %s" % (self.launch_command, host, env_string,
                                        launch_script_hop)
 
         return task_command, ssh_hop_cmd
 
+    # --------------------------------------------------------------------------
+    #
+    def get_rank_cmd(self):
+        pass
 
 # ------------------------------------------------------------------------------
 

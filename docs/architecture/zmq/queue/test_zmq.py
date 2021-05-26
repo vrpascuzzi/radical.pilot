@@ -4,112 +4,153 @@ import os
 import sys
 import zmq
 import time
+import setproctitle
+
+import radical.utils   as ru
 import multiprocessing as mp
 
-cfg = {'src'   : {'n' : 1000,
-                  't' : 0.0 } ,
-       'queue' : {'t' : 0.0 } ,
-       'tgt'   : {'t' : 0.0 } }
+delay      = 0.0
+n_msgs     = 1000000
+n_sender   = 1
+n_receiver = 5
 
 
-def src(host):
+# ------------------------------------------------------------------------------
+#
+def sender(idx, t_zero, n_msgs, delay):
+
+    uid            = 'snd.%03d' % idx
+    prof           = ru.Profiler('radical.zmq.%s' % uid)
     context        = zmq.Context()
     socket_src     = context.socket(zmq.PUSH)
-    socket_src.hwm = 10
-    socket_src.connect("tcp://%s:5000" % host)
+    socket_src.hwm = 1024
+    socket_src.connect("tcp://127.0.0.1:5000")
 
-    n = cfg['src']['n']
-    t = cfg['src']['t']
+    setproctitle.setproctitle('python3_%s' % uid)
 
-    pid = os.getpid()
+    try:
+        for num in range(int(n_msgs)):
+            msg = {'cnt':num}
+            socket_src.send_json(msg)
+          # print('sent %s' % msg)
+            prof.prof('zmq_snd', uid=uid, msg=t_zero)
 
-    for num in range(n):
-        msg = {unicode(pid):num}
-        socket_src.send_json(msg)
-        print('put %s' % msg)
-        time.sleep (t)
-    print('put %s' % msg)
-    socket_src.send_json({pid:'stop'})
-    context.destroy()
+            if delay:
+                time.sleep (delay)
+
+        print(uid, n_msgs)
+    finally:
+        prof.close()
+
+    time.sleep(10)
 
 
-def queue(host):
+
+# ------------------------------------------------------------------------------
+#
+def forward(idx, tzero, n_msgs, delay):
+
+    uid            = 'fwd.%03d' % idx
+    prof           = ru.Profiler('radical.zmq.%s' % uid)
     context        = zmq.Context()
     socket_src     = context.socket(zmq.PULL)
-    socket_src.hwm = 10
-    socket_src.bind("tcp://%s:5000" % host)
+    socket_src.hwm = 1024
+    socket_src.bind("tcp://127.0.0.1:5000")
 
     context         = zmq.Context()
     socket_sink     = context.socket(zmq.REP)
-    socket_sink.hwm = 10
+    socket_sink.hwm = 1024
     socket_sink.bind("tcp://127.0.0.1:5001")
 
-    t = cfg['queue']['t']
+    setproctitle.setproctitle('python3_%s' % uid)
 
     try:
+        cnt = 0
         while True:
-            _   = socket_sink.recv()
-            msg = socket_src.recv_json()
-            print('<-> %s' % msg)
-            socket_sink.send_json(msg)
+            _ = socket_sink.recv()
+            socket_sink.send(socket_src.recv())
+            prof.prof('zmq_fwd', uid=uid, msg=t_zero)
+          # print(msg)
+            
+            cnt += 1
+            if cnt >= n_msgs:
+                print(uid, cnt)
+                break
 
-            if 'stop' in msg.values():
-                return
+            if delay:
+                time.sleep (delay)
 
-            if t:
-                time.sleep (t)
     finally:
-        context.destroy()
+        prof.close()
+
+    time.sleep(10)
 
 
-def tgt(host):
+# ------------------------------------------------------------------------------
+#
+def receiver(idx, tzero, n_msgs, delay):
+
+    uid            = 'rcv.%03d' % idx
+    prof            = ru.Profiler('radical.zmq.%s' % uid)
     context         = zmq.Context()
     socket_sink     = context.socket(zmq.REQ)
-    socket_sink.hwm = 10
+    socket_sink.hwm = 1024
     socket_sink.connect("tcp://127.0.0.1:5001")
 
-    t = cfg['tgt']['t']
+    setproctitle.setproctitle('python3_%s' % uid)
 
     try:
+        cnt = 0
         while True:
             socket_sink.send(b'request')
             msg = socket_sink.recv_json()
-            print('get %s' % msg)
-            time.sleep (t)
+            prof.prof('zmq_rcv', msg=t_zero)
+          # print('got %s' % msg)
+            cnt += 1
 
-            if 'stop' in msg.values():
-                return
+            if cnt >= n_msgs:
+                print(uid, cnt)
+                break
 
+            if delay:
+                time.sleep(delay)
+
+    except Exception as e:
+        print('ERROR', e)
     finally:
-        context.destroy()
+        prof.close()
+
+    time.sleep(10)
 
 
-if len(sys.argv) < 3:
-    print('''
+# ------------------------------------------------------------------------------
+#
+if __name__ == '__main__':
 
-    usage: %s <host> <type> [<type>]
-
-    ''')
-    sys.exit(-1)
-
-
-host = sys.argv[1]
-
-if host in ['local', 'localhost']:
-    host = '127.0.0.1'
-
-procs = list()
-for arg in sys.argv[2:]:
-    if arg == 'src'  : procs.append (mp.Process(target=src  , args=[host]))
-    if arg == 'queue': procs.append (mp.Process(target=queue, args=[host]))
-    if arg == 'tgt'  : procs.append (mp.Process(target=tgt  , args=[host]))
-
-# Run processes
-for p in procs:
+    t_zero = time.time()
+    
+    print('forward  %d' % 0)
+    p = mp.Process(target=forward, args=[0, t_zero, n_msgs, delay])
     p.start()
+    time.sleep(3)
+    
+    procs = list()
+    for idx in range(n_sender):
+        print('sender   %d' % idx)
+        procs.append (mp.Process(target=sender,
+                                 args=[idx, t_zero, n_msgs / n_sender, delay]))
+    
+    for idx in range(n_receiver):
+        print('receiver %d' % idx)
+        procs.append (mp.Process(target=receiver,
+                                 args=[idx, t_zero, n_msgs / n_receiver, delay]))
+    
+    for p in procs:
+        p.start()
+    
+    for p in procs:
+        p.join()
+    
 
-# Exit the completed processes
-for p in procs:
-    p.join()
-
+# ------------------------------------------------------------------------------
 

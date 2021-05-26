@@ -18,17 +18,17 @@ def expand_description(descr):
 
       in:  ['input.dat']
       out: {'source' : 'client:///input.dat',
-            'target' : 'unit:///input.dat',
+            'target' : 'task:///input.dat',
             'action' : rp.TRANSFER}
 
       in:  ['input.dat > staged.dat']
       out: {'source' : 'client:///input.dat',
-            'target' : 'unit:///staged.dat',
+            'target' : 'task:///staged.dat',
             'action' : rp.TRANSFER}
 
     This method changes the given description in place - repeated calls on the
     same description instance will have no effect.  However, we expect this
-    method to be called only once during unit construction.
+    method to be called only once during task construction.
     """
 
     if descr.get('input_staging')  is None: descr['input_staging']  = list()
@@ -100,20 +100,18 @@ def expand_staging_directives(sds):
                 for flag in flags:
                     if isinstance(flags, str):
                         raise ValueError('"%s" is no valid RP constant' % flag)
-                    int_flags != flag
+                    int_flags |= flag
                 flags = int_flags
 
             elif isinstance(flags, str):
                 raise ValueError('use RP constants for staging flags!')
 
-            # FIXME: ns = session ID
-            expanded = {'source':   source,
+            expanded = {'uid':      ru.generate_id('sd'),
+                        'source':   source,
                         'target':   target,
                         'action':   action,
                         'flags':    flags,
-                        'priority': priority,
-                        'uid':      ru.generate_id('sd.%(item_counter)06d',
-                                                    ru.ID_CUSTOM, ns='foo')}
+                        'priority': priority}
 
         else:
             raise Exception("Unknown directive: %s (%s)" % (sd, type(sd)))
@@ -145,7 +143,7 @@ def complete_url(path, context, log=None):
         * `client://`  : the client's working directory
         * `resource://`: the RP    sandbox on the target resource
         * `pilot://`   : the pilot sandbox on the target resource
-        * `unit://`    : the unit  sandbox on the target resource
+        * `task://`    : the task  sandbox on the target resource
 
     For the above schemas, we interpret `schema://` the same as `schema:///`,
     ie. we treat this as a namespace, not as location qualified by a hostname.
@@ -202,10 +200,6 @@ def complete_url(path, context, log=None):
 
         log.debug('   expand with %s', context[schema])
         ret = ru.Url(context[schema])
-
-        if schema in ['resource', 'pilot']:
-            # use a dedicated staging area dir
-            ret.path += '/staging_area'
 
         ret.path += '/%s' % ppath
         purl      = ret

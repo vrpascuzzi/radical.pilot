@@ -3,6 +3,8 @@
 # Unset functions/aliases of commands that will be used during bootstrap as
 # these custom functions can break assumed/expected behavior
 export PS1='#'
+export LC_NUMERIC="C"
+
 unset PROMPT_COMMAND
 unset -f cd ls uname pwd date bc cat echo grep
 
@@ -52,7 +54,7 @@ fi
 # Copyright 2013-2015, RADICAL @ Rutgers
 # Licensed under the MIT License
 #
-# This script launches a radical.pilot compute pilot.  If needed, it creates and
+# This script launches a radical.pilot pilot.  If needed, it creates and
 # populates a virtualenv on the fly, into $VIRTENV.
 #
 # https://xkcd.com/1987/
@@ -188,8 +190,58 @@ profile_event(){
     event=$1
     msg=$2
     ts=$(date '+%s')
-    printf "%.4f,$event,bootstrap_0,$$,$PILOT_ID,PMGR_ACTIVE_PENDING,$msg\n" \
+    printf "%.6f,$event,bootstrap_0,$$,$PILOT_ID,PMGR_ACTIVE_PENDING,$msg\n" \
            $ts >> bootstrap_0.prof
+}
+
+
+# ------------------------------------------------------------------------------
+#
+# If profiling is enabled, compile our little gtod app and take the first time
+#
+create_gtod()
+{
+    tmp=`date '+%s.%N' | grep N`
+    if test "$?" = 0
+    then
+        if ! contains "$tmp" '%'
+        then
+            # we can use the system tool
+            echo "#!/bin/sh"       > ./gtod
+            echo "date '+%s.%6N'" >> ./gtod
+        fi
+    else
+        shell=/bin/sh
+        test -x '/bin/bash' && shell=/bin/bash
+
+        echo "#!$SHELL"                                > ./gtod
+        echo "export LC_NUMERIC=C"                    >> ./gtod
+        echo "if test -z \"\$EPOCHREALTIME\""         >> ./gtod
+        echo "then"                                   >> ./gtod
+        echo "  awk 'BEGIN {srand(); print srand()}'" >> ./gtod
+        echo "else"                                   >> ./gtod
+        echo "  echo \${EPOCHREALTIME:0:20}"          >> ./gtod
+        echo "fi"                                     >> ./gtod
+    fi
+
+    chmod 0755 ./gtod
+
+    # initialize profile
+    PROFILE="bootstrap_0.prof"
+    now=$(./gtod)
+    echo "#time,event,comp,thread,uid,state,msg" > "$PROFILE"
+
+    ip=$(ip addr \
+         | grep 'state UP' -A2 \
+         | grep 'inet' \
+         | awk '{print $2}' \
+         | cut -f1 -d'/' \
+         | tr '\n' ' ' \
+         | cut -f1 -d' ')
+    printf "%.4f,%s,%s,%s,%s,%s,%s\n" \
+        "$now" "sync_abs" "bootstrap_0" "MainThread" "$PILOT_ID" \
+        "PMGR_ACTIVE_PENDING" "$(hostname):$ip:$now:$now:$now" \
+        | tee -a "$PROFILE"
 }
 
 
@@ -202,30 +254,6 @@ cat > ./gtod <<EOT
 $(which radical-gtod)
 EOT
 
-cat > ./prof <<EOT
-#!/bin/sh
-
-event="\$1"; shift
-msg="\$*"
-
-test -z "\$RADICAL_PILOT_PROFILE\$RADICAL_PROFILE" && exit 0
-test -z "\$RP_PROF_TGT"                            && exit 0
-
-now=\$(\$RP_GTOD)           # time of event as seconds since epoch
-event="\$event"             # event ID
-comp="unit_script"          # component which recorded the event
-tid="\$PPID"                # uid of thread involved
-uid="\$RP_UNIT_ID"          # uid of entity involved
-state="AGENT_EXECUTING"     # state of entity involved 
-
-printf "%.4f,%s,%s,%s,%s,%s,%s\n" \
-       "\$now" "\$event" "\$comp" "\$tid" "\$uid" "\$state" "\$msg" \
-       >> "\$RP_PROF_TGT"
-
-EOT
-
-chmod 0755 ./gtod
-chmod 0755 ./prof
 }
 
 
@@ -832,16 +860,16 @@ virtenv_activate()
     python_dist="$2"
 
     if test "$python_dist" = "anaconda"; then
-        if test -e "`which conda`"; then
+        if ! test -z $(which conda); then
             eval "$(conda shell.posix hook)"
             conda activate "$virtenv"
-        else
-            if test -e "$virtenv/bin/activate"; then
-                . "$virtenv/bin/activate"
-            fi
+
+        elif test -e "$virtenv/bin/activate"; then
+            . "$virtenv/bin/activate"
         fi
+
         if test -z "$CONDA_PREFIX"; then
-            echo "ERROR: activating of (conda) virtenv failed - abort"
+            echo "Loading of conda env failed!"
             exit 1
         fi
     else
@@ -1253,7 +1281,6 @@ rp_install()
   # fi
 
     pip_flags="$pip_flags --src '$PILOT_SANDBOX/rp_install/src'"
-    pip_flags="$pip_flags --build '$PILOT_SANDBOX/rp_install/build'"
     pip_flags="$pip_flags --prefix '$RP_INSTALL'"
     pip_flags="$pip_flags --no-deps --no-cache-dir --no-build-isolation"
 
@@ -1266,9 +1293,6 @@ rp_install()
         then
             echo "Couldn't install $src! Lets see how far we get ..."
         fi
-
-        # NOTE: why? fuck pip, that's why!
-        rm -rf "$PILOT_SANDBOX/rp_install/build"
 
         # clean out the install source if it is a local dir
         if test -d "$src"
@@ -1452,7 +1476,7 @@ while getopts "a:b:cd:e:f:g:h:i:m:p:r:s:t:v:w:x:y:z:" OPTION; do
         w)  pre_bootstrap_2 "$OPTARG"         ;;
         x)  CLEANUP="$OPTARG"                 ;;
         y)  RUNTIME="$OPTARG"                 ;;
-        z)  TARBALL="$OPTARG"                   ;;
+        z)  TARBALL="$OPTARG"                 ;;
         *)  echo "Unknown option: '$OPTION'='$OPTARG'"
             return 1;;
     esac
@@ -1465,7 +1489,7 @@ untar "$TARBALL"
 echo '# -------------------------------------------------------------------'
 
 # before we change anything else in the pilot environment, we safe a couple of
-# env vars to later re-create a close-to-pristine env for unit execution.
+# env vars to later re-create a close-to-pristine env for task execution.
 _OLD_VIRTUAL_PYTHONPATH="$PYTHONPATH"
 _OLD_VIRTUAL_PYTHONHOME="$PYTHONHOME"
 _OLD_VIRTUAL_PATH="$PATH"
@@ -1667,6 +1691,9 @@ PILOT_SCRIPT=`which radical-pilot-agent`
 # Verify it
 verify_install
 
+# we should have a better `gtod` now
+test -z $(which radical-gtod) || cp $(which radical-gtod ./gtod)
+
 AGENT_CMD="$PYTHON $PILOT_SCRIPT"
 
 verify_rp_install
@@ -1742,7 +1769,7 @@ export LD_LIBRARY_PATH="$PB1_LDLB"
 $PREBOOTSTRAP2_EXPANDED
 
 # activate virtenv
-if test "$PYTHON_DIST" = "anaconda" && test -e "`which conda`"
+if test "$PYTHON_DIST" = "anaconda" && ! test -z $(which conda)
 then
     eval "\$(conda shell.posix hook)"
     conda activate $VIRTENV
@@ -1777,7 +1804,7 @@ chmod 0755 bootstrap_2.sh
 
 #
 # Create a barrier to start the agent.
-# This can be used by experimental scripts to push all units to the DB before
+# This can be used by experimental scripts to push all tasks to the DB before
 # the agent starts.
 #
 if ! test -z "$RADICAL_PILOT_BARRIER"
@@ -1851,7 +1878,7 @@ fi
 create_deactivate
 
 # start the master agent instance (zero)
-profile_event 'sync_rel' 'agent.0'
+profile_event 'bootstrap_0_ok'
 if test -z "$CCM"; then
     ./bootstrap_2.sh 'agent.0'    \
                    1> agent.0.bootstrap_2.out \
@@ -1878,13 +1905,13 @@ do
             waitfor 1 30 "kill -0  $AGENT_PID"
             test "$?" = 0 || break
 
-            profile_event 'sigkill' 
+            profile_event 'sigkill'
             echo "send SIGKILL to $AGENT_PID ($$)"
             kill  -9 $AGENT_PID
         fi
     else
         echo
-        profile_event 'agent_gone' 
+        profile_event 'agent_gone'
         echo "agent $AGENT_PID is gone"
         break
     fi
@@ -1904,7 +1931,7 @@ profile_event 'agent_final' "$AGENT_PID:$AGENT_EXITCODE"
 
 # cleanup flags:
 #   l : pilot log files
-#   u : unit work dirs
+#   u : task work dirs
 #   v : virtualenv
 #   e : everything
 echo
@@ -1914,7 +1941,7 @@ echo "#"
 
 profile_event 'cleanup_start'
 contains $CLEANUP 'l' && rm -r "$PILOT_SANDBOX/agent.*"
-contains $CLEANUP 'u' && rm -r "$PILOT_SANDBOX/unit.*"
+contains $CLEANUP 'u' && rm -r "$PILOT_SANDBOX/task.*"
 contains $CLEANUP 'v' && rm -r "$VIRTENV/" # FIXME: in what cases?
 contains $CLEANUP 'e' && rm -r "$PILOT_SANDBOX/"
 profile_event 'cleanup_stop'

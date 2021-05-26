@@ -1,3 +1,4 @@
+# pylint: disable=import-error
 
 __copyright__ = 'Copyright 2013-2020, http://radical.rutgers.edu'
 __license__   = 'MIT'
@@ -21,6 +22,24 @@ from .base import AgentExecutingComponent
 # ------------------------------------------------------------------------------
 #
 class Flux(AgentExecutingComponent) :
+
+    # translate Flux states changes to RP state transitions (task
+    # arrives here in `rps.AGENT_SCHEDULING` state
+    #
+    #    'NEW'      -->  `rps.AGENT_SCHEDULING`   (no transition)
+    #    'DEPEND'   -->  `rps.AGENT_SCHEDULING`   (no transition)
+    #    'SCHED'    -->  `rps.AGENT_EXECUTING_PENDING`
+    #    'RUN'      -->  `rps.AGENT_EXECUTING`
+    #    'CLEANUP'  -->  `rps.AGENT_EXECUTING`    (no transition)
+    #    'INACTIVE' -->  `rps.AGENT_STAGING_OUTPUT_PENDING`
+    #
+    _event_map = {'NEW'     : None,   # rps.AGENT_SCHEDULING,
+                  'DEPEND'  : None,
+                  'SCHED'   : rps.AGENT_EXECUTING_PENDING,
+                  'RUN'     : rps.AGENT_EXECUTING,
+                  'CLEANUP' : None,
+                  'INACTIVE': rps.AGENT_STAGING_OUTPUT_PENDING,
+                 }
 
     # --------------------------------------------------------------------------
     #
@@ -92,7 +111,7 @@ class Flux(AgentExecutingComponent) :
         cmd = msg['cmd']
       # arg = msg['arg']
 
-        if cmd == 'cancel_units':
+        if cmd == 'cancel_tasks':
 
             # FIXME: clarify how to cancel tasks in Flux
             pass
@@ -102,9 +121,9 @@ class Flux(AgentExecutingComponent) :
 
     # --------------------------------------------------------------------------
     #
-    def work(self, units):
+    def work(self, tasks):
 
-        self._task_q.put(ru.as_list(units))
+        self._task_q.put(ru.as_list(tasks))
 
         if self._term.is_set():
             self._log.warn('threads triggered termination')
@@ -116,7 +135,7 @@ class Flux(AgentExecutingComponent) :
     def _get_flux_handle(self):
 
         import flux
-        
+
         flux_uri = self._cfg['rm_info']['lm_info']['flux_env']['FLUX_URI']
         return flux.Flux(url=flux_uri)
 
@@ -136,7 +155,7 @@ class Flux(AgentExecutingComponent) :
             # FIXME: how tot subscribe for task return code information?
             def _flux_cb(self, *args, **kwargs):
                 self._log.debug('==== flux cb    %s' % [args, kwargs])
-           
+
             # signal successful setup to main thread
             self._listener_setup.set()
 
@@ -196,19 +215,12 @@ class Flux(AgentExecutingComponent) :
             flux_state = event[1]
             task['flux_states'].append(flux_state)
 
-            # translate Flux states changes to RP state transitions (task
-            # arrives here in `rps.AGENT_SCHEDULING` state
-            #
-            #    'NEW'      -->  `rps.AGENT_SCHEDULING`   (no transition)
-            #    'DEPEND'   -->  `rps.AGENT_SCHEDULING`   (no transition)
-            #    'SCHED'    -->  `rps.AGENT_EXECUTING_PENDING`
-            #    'RUN'      -->  `rps.AGENT_EXECUTING`
-            #    'CLEANUP'  -->  `rps.AGENT_EXECUTING`    (no transition)
-            #    'INACTIVE' -->  `rps.AGENT_STAGING_OUTPUT_PENDING`
-            #
             # we don't need to do anything on most events and actually only wait
             # for task completion (`INACTIVE`)
-            if flux_state != 'INACTIVE':
+            state = self._event_map[flux_state]
+
+            if state is None:
+                # ignore this state transition
                 self._log.debug('ignore flux event %s:%s' %
                                 (task['uid'], flux_state))
                 continue
@@ -221,7 +233,7 @@ class Flux(AgentExecutingComponent) :
             # and only switch to `DONE` if we find an exit code `0`.
             task['target_state'] = rps.FAILED
 
-            # task is completed - sift through the job's event log to see 
+            # task is completed - sift through the job's event log to see
             # what happened to it and determine return code
             for event in fjob.event_watch(flux_handle, flux_id, 'eventlog'):
 
@@ -236,7 +248,7 @@ class Flux(AgentExecutingComponent) :
                     # FIXME: maybe `alloc` is `schedule_start`, and
                     #       `debug.start-request` maps to `schedule_ok`?
                     self._prof.prof('schedule_ok', comp='flux',
-                                    state=rps.AGENT_SCHEDULING, 
+                                    state=rps.AGENT_SCHEDULING,
                                     uid=uid, ts=ts, msg=msg)
                     self.advance(task, rps.AGENT_EXECUTING_PENDING, ts=ts,
                                  publish=True, push=False)
@@ -277,7 +289,7 @@ class Flux(AgentExecutingComponent) :
                 elif evt == 'debug.free-request':
                     # request task resources to be freed
                     self._prof.prof('unschedule', comp='flux',
-                                    state=rps.AGENT_EXECUTING, 
+                                    state=rps.AGENT_EXECUTING,
                                     uid=uid, ts=ts, msg=msg)
 
                 elif evt == 'free':
@@ -299,7 +311,7 @@ class Flux(AgentExecutingComponent) :
                     r = json.loads(result['R'])
 
                   # {
-                  #     'version': 1, 
+                  #     'version': 1,
                   #     'starttime': 1603360891,
                   #     'expiration': 1603965691
                   #     'execution': {
@@ -313,7 +325,7 @@ class Flux(AgentExecutingComponent) :
                   #     }
                   # }
                     assert(r['version'] == 1)
-                    
+
                     sl = {'cores_per_node': 8,
                           'gpus_per_node' : 2,
                           'mem_per_node'  : 0,
@@ -337,7 +349,7 @@ class Flux(AgentExecutingComponent) :
                         sl['nodes'].append(slot)
 
                     task['slots'] = sl
-                
+
                     slots_fname = '%s/%s.sl' % (task['unit_sandbox_path'],
                                                 task['uid'])
                     ru.write_json(slots_fname, task['slots'])
@@ -396,30 +408,44 @@ class Flux(AgentExecutingComponent) :
 
                 for task in tasks:
 
+                    flux_id = None
+                    try:
                         flux_id = task['flux_id']
                         assert flux_id not in tasks
                         tcache[flux_id] = task
 
                         # handle and purge cached events for that task
-                        if flux_id in ecache :
-                            try:
-                                # known task - handle events
-                                events = ecache[flux_id]
-                                self.handle_events(flux_handle, task, events)
+                        events = list()
+                        if flux_id in ecache:
+                            # known task - handle events
+                            events = ecache[flux_id]
+                            self.handle_events(flux_handle, task, events)
 
-                            except Exception as e:
-                                # event handling failed - fail the task
-                                self._log.exception('flux event handling failed')
-                                task['target_state'] = rps.FAILED
+                    except Exception:
 
-                            if task.get('target_state'):
-                                # task completed - purge data and push it out
-                                # NOTE: this assumes events are ordered
-                                if flux_id in ecache: del(ecache[flux_id])
-                                if flux_id in tcache: del(tcache[flux_id])
+                        self._log.exception("error collecting Task")
+                        if task['stderr'] is None:
+                            task['stderr'] = ''
+                        task['stderr'] += '\nPilot cannot collect task:\n'
+                        task['stderr'] += '\n'.join(ru.get_exception_trace())
 
-                                self.advance(task, rps.AGENT_STAGING_OUTPUT_PENDING, 
-                                             publish=True, push=True)
+                        # can't rely on the executor base to free the task resources
+                        self._prof.prof('unschedule_start', uid=task['uid'])
+                        self.publish(rpc.AGENT_UNSCHEDULE_PUBSUB, task)
+
+                        # event handling failed - fail the task
+                        self._log.exception('flux event handling failed')
+                        task['target_state'] = rps.FAILED
+
+                        self.advance(task, rps.AGENT_STAGING_OUTPUT_PENDING,
+                                           publish=True, push=True)
+
+                    # clean caches for final tasks
+                    if flux_id and task.get('target_state'):
+                        # task completed - purge data and push it out
+                        # NOTE: this assumes events are ordered
+                        if flux_id in ecache: del(ecache[flux_id])
+                        if flux_id in tcache: del(tcache[flux_id])
 
 
                 events = list()
@@ -428,13 +454,13 @@ class Flux(AgentExecutingComponent) :
                 except queue.Empty:
                     pass
 
-
                 for event in events:
 
                     self._log.debug('=== ev : %s', event)
                     self._log.debug('=== ids: %s', tcache.keys())
 
-                    flux_id = event[0]
+                    flux_id = event[0]  # event: flux_id, flux_state
+
                     if flux_id in tcache:
 
                         task = tcache[flux_id]
@@ -453,7 +479,7 @@ class Flux(AgentExecutingComponent) :
                             if flux_id in ecache: del(ecache[flux_id])
                             if flux_id in tcache: del(tcache[flux_id])
 
-                            self.advance(task, rps.AGENT_STAGING_OUTPUT_PENDING, 
+                            self.advance(task, rps.AGENT_STAGING_OUTPUT_PENDING,
                                          publish=True, push=True)
 
                     else:
