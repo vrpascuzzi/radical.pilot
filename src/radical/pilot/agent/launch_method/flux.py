@@ -53,17 +53,17 @@ class Flux(LaunchMethod):
             raise Exception("Couldn't import flux")
 
         with open('flux_launcher.sh', 'w') as fout:
+              fout.write('''#/bin/sh
+  export PMIX_MCA_gds='^ds12,ds21'
+  echo "flux env; echo -n 'hostname:'; hostname -f; echo OK; while true; do echo ok; sleep 10; done" | \\
+  jsrun -a 1 -c ALL_CPUS -g ALL_GPUS -n %d --bind none --smpiargs '-disable_gpu_hooks' \\
+  flux start -o,-v,-S,log-filename=flux.log
+  ''' % len(rm.node_list))
 #             fout.write('''#/bin/sh
 # export PMIX_MCA_gds='^ds12,ds21'
-# echo "flux env; echo -n 'hostname:'; hostname -f; echo OK; while true; do echo # ok; sleep 10; done" | \\
-# jsrun -a 1 -c ALL_CPUS -g ALL_GPUS -n %d --bind none --smpiargs '-disable_gpu_hooks' \\
+# echo "flux env; echo -n 'hostname:'; hostname -f; echo OK; while true; do echo ok; sleep 1; done" | \\
 # flux start -o,-v,-S,log-filename=flux.log
-# ''' % len(rm.node_list))
-            fout.write('''#/bin/sh
-export PMIX_MCA_gds='^ds12,ds21'
-echo "flux env; echo -n 'hostname:'; hostname -f; echo OK; while true; do echo ok; sleep 1; done" | \\
-flux start -o,-v,-S,log-filename=flux.log
-''')
+# ''')
 
         cmd  = '/bin/sh ./flux_launcher.sh'
         proc = sp.Popen(cmd, shell=True,

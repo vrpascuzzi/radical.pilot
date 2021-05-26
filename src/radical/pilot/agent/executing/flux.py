@@ -152,7 +152,7 @@ class Flux(AgentExecutingComponent) :
                         self._log.debug('lost flux during termination')
                         break
                     else:
-                        raise RuntimeError('list flux connection') from e
+                        raise RuntimeError('lost flux connection') from e
 
                 self._log.debug('==== flux event %s' % [event.payload])
 
