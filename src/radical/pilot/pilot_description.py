@@ -20,8 +20,8 @@ RUNTIME           = 'runtime'
 APP_COMM          = 'app_comm'
 CLEANUP           = 'cleanup'
 EXIT_ON_ERROR     = 'exit_on_error'
-
 LAYOUT            = 'layout'
+SERVICES          = 'services'
 
 NODES             = 'nodes'
 CORES             = 'cores'
@@ -180,6 +180,13 @@ class PilotDescription(ru.Description):
        [type: `bool` | default: `True`] Flag to trigger app termination in case
        of the pilot failure.
 
+    .. data:: services
+
+       [Type: [`str`] | default: `[]`] [optional] A list of commands which get
+       started on a separate service compute node right after bootstrapping, and
+       before any RP task is launched.  That service compute node will not be
+       used for any other tasks.
+
     .. data:: layout
 
        [type: `str` or `dict` | default: `"default"`] Point to a json file or
@@ -232,6 +239,7 @@ class PilotDescription(ru.Description):
         OUTPUT_STAGING  : [str]      ,
         PREPARE_ENV     : {str: None},
         LAYOUT          : None       ,
+        SERVICES        : [str]      ,
     }
 
     _defaults = {
@@ -254,6 +262,7 @@ class PilotDescription(ru.Description):
         OUTPUT_STAGING  : []         ,
         PREPARE_ENV     : {}         ,
         LAYOUT          : 'default'  ,
+        SERVICES        : []         ,
     }
 
 

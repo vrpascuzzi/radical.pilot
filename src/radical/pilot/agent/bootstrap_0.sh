@@ -1421,6 +1421,16 @@ $cmd"
 
 # -------------------------------------------------------------------------------
 #
+# Build the PREBOOTSTRAP2 variable to pass down to sub-agents
+#
+add_services()
+{
+    echo "$* &" >> ./services
+}
+
+
+# -------------------------------------------------------------------------------
+#
 # untar the pilot sandbox
 #
 untar()
@@ -1448,6 +1458,7 @@ untar()
 #    -g   virtualenv distribution (default, 1.9, system)
 #    -h   hostport to create tunnel to
 #    -i   python Interpreter to use, e.g., python2.7
+#    -j   add a command for the service node
 #    -m   mode of stack installion
 #    -n   partitions
 #    -p   pilot ID
@@ -1462,7 +1473,7 @@ untar()
 #
 # NOTE: -z makes some assumptions on sandbox and tarball location
 #
-while getopts "a:b:cd:e:f:g:h:i:m:n:p:r:s:t:v:w:x:y:z:" OPTION; do
+while getopts "a:b:cd:e:f:g:h:i:j:m:n:p:r:s:t:v:w:x:y:z:" OPTION; do
     case $OPTION in
         a)  SESSION_SANDBOX="$OPTARG"         ;;
         b)  PYTHON_DIST="$OPTARG"             ;;
@@ -1473,6 +1484,7 @@ while getopts "a:b:cd:e:f:g:h:i:m:n:p:r:s:t:v:w:x:y:z:" OPTION; do
         g)  VIRTENV_DIST="$OPTARG"            ;;
         h)  HOSTPORT="$OPTARG"                ;;
         i)  PYTHON="$OPTARG"                  ;;
+        j)  add_services "$OPTARG"            ;;
         m)  VIRTENV_MODE="$OPTARG"            ;;
         n)  PARTITIONS="$OPTARG"              ;;
         p)  PILOT_ID="$OPTARG"                ;;
@@ -1854,9 +1866,16 @@ export RADICAL_PILOT_NTPHOST=$RADICAL_PILOT_NTPHOST
 # the other side too (e.g. sub-agents).
 $PREBOOTSTRAP1_EXPANDED
 
-# start agent, forward arguments
+# start services and agent, forward arguments
 # NOTE: exec only makes sense in the last line of the script
-exec $PYTHON $AGENT_SCRIPT "\$1" 1>"\$1.out" 2>&1
+if test "\$1" = 'services'
+then
+    # start the services script
+    exec ./services 1> services.out 2> services.err
+else
+    # start a sub-agent
+    exec $PYTHON $AGENT_SCRIPT "\$1" 1>"\$1.out" 2>&1
+fi
 
 EOT
 chmod 0755 bootstrap_3.sh
@@ -1936,6 +1955,11 @@ fi
 # all env settings are done, bootstrap stages are created - as last action
 # capture the resulting env differences in a deactivate script
 create_deactivate
+
+# add a `wait` to the services script
+test -f ./services && echo 'wait' >> ./services
+test -f ./services && chmod 0755     ./services
+
 
 # start the master agent instance (zero)
 profile_event 'bootstrap_0_ok'
