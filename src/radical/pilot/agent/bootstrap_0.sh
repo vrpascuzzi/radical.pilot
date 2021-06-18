@@ -1825,12 +1825,14 @@ chmod 0755 bootstrap_1.sh
 cat > bootstrap_3.sh <<EOT
 #!$BS_SHELL
 
+agent="\$1"
+
 # launch an agent on a specific partition
 # disable user site packages as those can conflict with our virtualenv
 export PYTHONNOUSERSITE=True
 
 # make sure we use the correct sandbox
-cd $PILOT_SANDBOX
+cd $PILOT_SANDBOX/\$agent
 
 # apply some env settings as stored after running pre_bootstrap_0 commands
 export PATH="$PB1_PATH"

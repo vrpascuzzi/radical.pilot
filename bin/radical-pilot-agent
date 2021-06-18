@@ -33,6 +33,7 @@ def bootstrap_4(aid):
     """
 
     print("bootstrap agent %s" % aid)
+    print(os.getcwd())
 
     agent = None
 
