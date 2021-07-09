@@ -1,0 +1,84 @@
+#!/usr/bin/env python3
+
+__copyright__ = "Copyright 2014-2016, http://radical.rutgers.edu"
+__license__   = "MIT"
+
+
+import os
+import sys
+import copy
+import time
+import setproctitle
+
+import radical.utils as ru
+
+
+# ------------------------------------------------------------------------------
+#
+def bootstrap_2(partitions):
+    """
+    This method continues where the bootstrap_0/1 left off, and will now attempt
+    to partition the available resources as configures.  Once an environment for
+    each partition is prepared, we invoke `bootstrap_3.sh agent.<idx>` for each
+    partition.
+    """
+
+    print("bootstrap partitions")
+
+    agent = None
+
+    try:
+        setproctitle.setproctitle('rp.partition')
+
+        partitions = [int(x) for x in partitions.split(',')]
+
+        cfg   = ru.Config(path='./partitions.cfg')
+        procs = list()
+        for idx, cores in enumerate(partitions):
+            agent_cfg = copy.deepcopy(cfg)
+            agent_cfg['cores'] = cores
+
+            agent = 'agent.%d' % idx
+
+            ru.rec_makedir('%s/%s' % (os.getcwd(), agent))
+            ru.write_json(agent_cfg, '%s/%s.cfg' % (agent, agent))
+            print('---> ./bootstrap_3.sh %s' % agent)
+            procs.append(ru.sh_callout_async('./bootstrap_3.sh %s' % agent))
+
+        for proc in procs:
+            print('wait for %s [%s]' % (proc.pid, proc.cmd))
+            proc.wait()
+            print('wait for %s [%s] ok' % (proc.pid, proc.cmd))
+
+    except:
+        print('failed partitions')
+        ru.print_exception_trace()
+
+    finally:
+        # in all cases, make sure we perform an orderly shutdown.  I hope python
+        # does not mind doing all those things in a finally clause of
+        # (essentially) main...
+        print('finalize partition')
+
+        for proc in procs:
+            try:
+                print('kill %s [%s]' % (proc.pid, proc.cmd))
+                proc.kill()
+            except:
+                pass
+            print('stopped  partition')
+
+
+# ------------------------------------------------------------------------------
+#
+if __name__ == "__main__":
+
+    # FIXME: daemonization a'la component
+
+    if len(sys.argv) != 2:
+        raise RuntimeError('missing parameter: partitions')
+
+    bootstrap_2(sys.argv[1])
+
+
+# ------------------------------------------------------------------------------
