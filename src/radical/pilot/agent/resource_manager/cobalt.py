@@ -1,7 +1,6 @@
 
-__copyright__ = "Copyright 2016, http://radical.rutgers.edu"
-__license__   = "MIT"
-
+__copyright__ = 'Copyright 2016-2021, The RADICAL-Cybertools Team'
+__license__   = 'MIT'
 
 import os
 
@@ -27,17 +26,19 @@ class Cobalt(ResourceManager):
         try:
             # this env variable is used for GPU nodes
             with open(os.environ['COBALT_NODEFILE'], 'r') as f:
-                node_list = [node.strip() for node in f.readlines() if node]
+                node_names = [node.strip() for node in f.readlines() if node]
         except KeyError:
-            n_nodes = int(os.environ['COBALT_PARTSIZE'])
-            node_list = ['node_%04d' % i for i in range(n_nodes)]
+            node_range = os.environ['COBALT_PARTNAME']
+            node_names = ru.get_hostlist_by_range(node_range, 'nid', 5)
 
             # Another option is to run `aprun` with the rank of nodes
             # we *think* we have, and with `-N 1` to place one rank per node,
             # and run `hostname` - that gives the list of hostnames.
             # (The number of nodes we receive from `$COBALT_PARTSIZE`.)
             #   out = ru.sh_callout('aprun -q -n %d -N 1 hostname' % n_nodes)[0]
-            #   node_list = out.split()
+            #   node_names = out.split()
+
+        self.node_list = [[n, str(i + 1)] for i, n in enumerate(node_names)]
 
         # get info about core count per node:
         #   cmd = 'cat /proc/cpuinfo | grep processor | wc -l'
@@ -47,8 +48,6 @@ class Cobalt(ResourceManager):
         #   assert(len(core_counts) == 1), core_counts
         #   cores_per_node = core_counts[0]
 
-        # node names are unique, so can serve as node uids
-        self.node_list      = [[node, node] for node in node_list]
         self.cores_per_node = self._cfg.get('cores_per_node', 1)
         self.gpus_per_node  = self._cfg.get('gpus_per_node', 0)
         self.mem_per_node   = self._cfg.get('mem_per_node', 0)

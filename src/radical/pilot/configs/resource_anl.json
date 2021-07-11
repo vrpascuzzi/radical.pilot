@@ -1,4 +1,3 @@
-
 {
     "theta": {
         "description"                 : "",
@@ -12,21 +11,23 @@
         },
         "default_queue"               : "debug-flat-quad",
         "resource_manager"            : "COBALT",
-        "lfs_per_node"                : "/tmp",
         "agent_config"                : "default",
         "agent_scheduler"             : "CONTINUOUS",
-        "agent_spawner"               : "POPENSH",
+      # "agent_spawner"               : "POPENSH",
+        "agent_spawner"               : "POPEN",
         "agent_launch_method"         : "SSH",
         "task_launch_method"          : "APRUN",
         "mpi_launch_method"           : "APRUN",
         "pre_bootstrap_0"             : [
-            "module load miniconda-3"
-        ],
+                                         "module load miniconda-3"
+                                        ],
         "valid_roots"                 : ["$HOME"],
         "default_remote_workdir"      : "$HOME",
         "virtenv_mode"                : "local",
         "stage_cacerts"               : true,
-        "cores_per_node"              : 64
+        "cores_per_node"              : 64,
+        "lfs_path_per_node"           : "/tmp",
+        "lfs_size_per_node"           : 0
     },
     "theta_gpu": {
         "description"                 : "",
@@ -40,16 +41,16 @@
         },
         "default_queue"               : "full-node",
         "resource_manager"            : "COBALT",
-        "lfs_per_node"                : "/tmp",
         "agent_config"                : "default",
         "agent_scheduler"             : "CONTINUOUS",
-        "agent_spawner"               : "POPENSH",
+      # "agent_spawner"               : "POPENSH",
+        "agent_spawner"               : "POPEN",
         "agent_launch_method"         : "SSH",
         "task_launch_method"          : "MPIRUN",
         "mpi_launch_method"           : "MPIRUN",
         "pre_bootstrap_0"             : [
-            ". /home/$USER/.miniconda3/etc/profile.d/conda.sh"
-        ],
+                                         ". /home/$USER/.miniconda3/etc/profile.d/conda.sh"
+                                        ],
         "valid_roots"                 : ["$HOME"],
         "default_remote_workdir"      : "$HOME",
         "virtenv_mode"                : "local",
@@ -57,5 +58,7 @@
         "cores_per_node"              : 128,
         "gpus_per_node"               : 8,
         "system_architecture"         : {"options": [["mig-mode=True"]]}
+        "lfs_path_per_node"           : "/tmp",
+        "lfs_size_per_node"           : 0
     }
 }
