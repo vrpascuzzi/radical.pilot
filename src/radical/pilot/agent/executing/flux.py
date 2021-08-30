@@ -65,6 +65,16 @@ class Flux(AgentExecutingComponent) :
               further state changes in this component.
         '''
 
+        # translate Flux states to RP states
+        self._event_map = {'NEW'     : None,   # rps.AGENT_SCHEDULING,
+                           'DEPEND'  : None,
+                           'SCHED'   : rps.AGENT_EXECUTING_PENDING,
+                           'RUN'     : rps.AGENT_EXECUTING,
+                           'CLEANUP' : None,
+                           'INACTIVE': rps.AGENT_STAGING_OUTPUT_PENDING,
+                           'PRIORITY': None,
+                          }
+
         # thread termination signal
         self._term    = mt.Event()
 
@@ -492,7 +502,6 @@ class Flux(AgentExecutingComponent) :
                 if not events and not tasks:
                     # nothing done in this loop
                     time.sleep(0.01)
-
 
         except Exception:
             self._log.exception('=== Error in watcher loop')

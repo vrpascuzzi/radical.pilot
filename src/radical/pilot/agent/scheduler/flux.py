@@ -1,10 +1,9 @@
 
-__copyright__ = "Copyright 2017, http://radical.rutgers.edu"
-__license__   = "MIT"
+__copyright__ = 'Copyright 2017, http://radical.rutgers.edu'
+__license__   = 'MIT'
 
 
 import os
-import json
 
 import radical.utils        as ru
 
@@ -56,6 +55,22 @@ class Flux(AgentSchedulingComponent):
 
     # --------------------------------------------------------------------------
     #
+    def schedule_task(self, task):
+
+        # this abstract method is not used in this implementation
+        assert(False)
+
+
+    # --------------------------------------------------------------------------
+    #
+    def unschedule_task(self, task):
+
+        # this abstract method is not used in this implementation
+        assert(False)
+
+
+    # --------------------------------------------------------------------------
+    #
     def _configure(self):
 
         self.gtod   = "%s/gtod" % self._pwd
@@ -66,7 +81,6 @@ class Flux(AgentSchedulingComponent):
             os.environ[k] = v
 
         import flux
-        from   flux import job
 
         flux_url   = flux_env['FLUX_URI']
         self._flux = flux.Flux(url=flux_url)
@@ -124,7 +138,7 @@ class Flux(AgentSchedulingComponent):
                 #       communication only affects timelyness of state updates.
                 self._q.put(task)
 
-            except Exception as e:
+            except Exception:
                 self._log.exception('flux submission failed')
                 task['target_state'] = rps.FAILED
                 self.advance(task, rps.AGENT_STAGING_OUTPUT_PENDING,
@@ -245,24 +259,23 @@ class Flux(AgentSchedulingComponent):
                           # }, {
                           # 'type' : 'gpu',
                           # 'count': td['gpu_processes']
-                            }]
                         }]
-                    }],
+                    }]
+                }],
                 'tasks': [{
                     'command': ['/bin/sh', script],
                     'slot'   : 'task_slot',
                     'count'  : {
                         'per_slot': 1
-                        }
-                    }],
+                    }
+                }],
                 'attributes': {
                     'system'       : {
                         'duration'   : 0.0,
                         'cwd'        : sbox,
                         'environment': env
-                        }
                     }
-                }
+                }}
 
         ru.write_json(spec, '%s/%s.flux' % (sbox, uid))
         js = flux_job.JobspecV1(tasks=spec['tasks'],
@@ -301,7 +314,6 @@ class Flux(AgentSchedulingComponent):
         td.stderr      = js.stderr
         td.stderr      = js.stderr
 
-        import pprint
         n_procs   = 1
         n_gpus    = 0
         n_threads = 1
@@ -316,13 +328,14 @@ class Flux(AgentSchedulingComponent):
 
         return td.as_dict()
 
+
   # # --------------------------------------------------------------------------
   # #
   # def _populate_task_environment(self):
   #
   #     import tempfile
   #
-  #     self.gtod   = "%s/gtod" % self._pwd
+  #     self.gtod   = '%s/gtod' % self._pwd
   #     self.tmpdir = tempfile.gettempdir()
   #
   #     # if we need to transplant any original env into the Task, we dig the
@@ -342,13 +355,13 @@ class Flux(AgentSchedulingComponent):
   # # --------------------------------------------------------------------------
   # #
   # def _populate_task_environment(self):
-  #     """Derive the environment for the t's from our own environment."""
+  #     '''Derive the environment for the t's from our own environment.'''
   #
   #     # Get the environment of the agent
   #     new_env = copy.deepcopy(os.environ)
   #
   #     #
-  #     # Mimic what virtualenv's "deactivate" would do
+  #     # Mimic what virtualenv's 'deactivate' would do
   #     #
   #     old_path = new_env.pop('_OLD_VIRTUAL_PATH', None)
   #     if old_path:
@@ -377,6 +390,54 @@ class Flux(AgentSchedulingComponent):
   #
   #     return new_env
 
+
+    # --------------------------------------------------------------------------
+    #
+    def task_to_spec(self, task):
+
+        td     = task['description']
+        uid    = task['uid']
+        sbox   = task['task_sandbox_path']
+        stdout = td.get('stdout') or '%s/%s.out' % (sbox, uid)
+        stderr = td.get('stderr') or '%s/%s.err' % (sbox, uid)
+
+        cmd  = '%s %s 1>%s 2>%s' % (td['executable'], ' '.join(td['arguments']),
+                                    stdout, stderr)
+        spec = {
+            'tasks': [{
+                'slot' : 'task',
+                'count': {
+                    'per_slot': 1
+                },
+                'command': ['/bin/sh', '-c', cmd],
+            }],
+            'attributes': {
+                'system': {
+                    'cwd'     : task['task_sandbox_path'],
+                    'duration': 0,
+                }
+            },
+            'version': 1,
+            'resources': [{
+                'count': td['cpu_processes'],
+                'type' : 'slot',
+                'label': 'task',
+                'with' : [{
+                    'count': td['cpu_threads'],
+                    'type' : 'core'
+                # }, {
+                #     'count': td['gpu_processes'],
+                #     'type' : 'gpu'
+                }]
+            }]
+        }
+
+        if td['gpu_processes']:
+            spec['resources']['with'].append({
+                    'count': td['gpu_processes'],
+                    'type' : 'gpu'})
+
+        return spec
 
 # ------------------------------------------------------------------------------
 
